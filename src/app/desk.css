@@ -1,0 +1,486 @@
+/* ==========================================================================
+   深夜书桌 · 场景版
+   台灯在右上，光锥斜投到桌面，光池照亮卡片。
+   全部动画只用 transform / opacity / filter。
+
+   光源只有一个定义处：--lamp-x / --lamp-y（灯罩开口中心）。
+   灯、光锥顶点、灯口亮核、拉绳全部由它推导，不可能再错开。
+   光池由 --pool-x / --pool-y 定义，光锥用 clip-path 直接连到光池边缘。
+   ========================================================================== */
+
+.desk-night {
+  /* ---- 场景几何：改这两个值，整套光就跟着走 ---- */
+  --lamp-x: 74%;
+  --lamp-y: 22%;
+  --pool-x: 50%;
+  --pool-y: 66%;
+  --pool-rx: 320px; /* 光池横向半径 */
+
+  /* ---- 颜色 ---- */
+  --n-bg: #0e0c0a;
+  --n-ink: #f2e8da;
+  --n-dim: #a89a87;
+  --n-lamp: #ffb86b;
+  --n-accent: #c98a3e;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  position: relative;
+  min-height: 100svh;
+  overflow: hidden;
+  background: var(--n-bg);
+  color: var(--n-ink);
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+}
+
+/* 整体噪点 */
+.desk-night::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 8;
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* 暗角 */
+.desk-night::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 7;
+  background: radial-gradient(
+    ellipse 74% 72% at 44% 44%,
+    transparent 26%,
+    rgba(0, 0, 0, 0.3) 58%,
+    rgba(0, 0, 0, 0.7) 100%
+  );
+}
+
+/* ---------------- 桌面 ---------------- */
+
+.desk-horizon {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 44%;
+  height: 140px;
+  pointer-events: none;
+  z-index: 1;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(32, 25, 18, 0.4) 38%,
+    rgba(24, 18, 12, 0.62) 54%,
+    rgba(32, 25, 18, 0.4) 72%,
+    transparent 100%
+  );
+}
+
+.desk-surface {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 44%;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 3px,
+      rgba(255, 184, 107, 0.016) 3px,
+      rgba(255, 184, 107, 0.016) 4px
+    ),
+    linear-gradient(to bottom, #191510 0%, #120f0b 32%, #0e0c0a 100%);
+}
+
+/* ---------------- 光锥：从灯口直接连到光池 ---------------- */
+
+.lamp-cone {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  /* 四个顶点：灯口左右 → 光池左右。clip-path 里的 calc 与光源同源 */
+  clip-path: polygon(
+    calc(var(--lamp-x) - 26px) var(--lamp-y),
+    calc(var(--lamp-x) + 26px) var(--lamp-y),
+    calc(var(--pool-x) + var(--pool-rx) * 0.95) calc(var(--pool-y) - 34px),
+    calc(var(--pool-x) - var(--pool-rx) * 0.95) calc(var(--pool-y) - 34px)
+  );
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 218, 148, 0.3) 0%,
+    rgba(255, 190, 118, 0.14) 30%,
+    rgba(255, 184, 107, 0.05) 58%,
+    transparent 88%
+  );
+  filter: blur(30px);
+  animation: cone-breathe 5.2s ease-in-out infinite alternate;
+  will-change: opacity, transform;
+}
+
+/* 光池 */
+.light-pool {
+  position: absolute;
+  left: var(--pool-x);
+  top: var(--pool-y);
+  width: calc(var(--pool-rx) * 2);
+  height: 330px;
+  pointer-events: none;
+  z-index: 2;
+  transform: translate(-50%, -50%) scaleX(1.3);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 228, 188, 0.32) 0%,
+    rgba(255, 184, 107, 0.13) 36%,
+    rgba(255, 184, 107, 0.035) 62%,
+    transparent 78%
+  );
+  filter: blur(26px);
+  animation: pool-breathe 4.8s ease-in-out infinite alternate;
+  will-change: opacity, transform;
+}
+
+@keyframes cone-breathe {
+  from { opacity: 0.93; }
+  to { opacity: 1; }
+}
+
+@keyframes pool-breathe {
+  from { opacity: 0.9; }
+  to { opacity: 1; }
+}
+
+/* 轻闪 */
+.lamp-flicker {
+  animation: lamp-flick 130ms ease-in-out !important;
+}
+
+@keyframes lamp-flick {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.84; }
+}
+
+/* ---------------- 台灯 ---------------- */
+/* SVG 尺寸 340×380，灯罩开口在内部坐标 (220, 235)。
+   下面把它反推回去，使开口中心正好落在 --lamp-x / --lamp-y。 */
+
+.lamp-svg {
+  position: absolute;
+  left: calc(var(--lamp-x) - 220px);
+  top: calc(var(--lamp-y) - 235px);
+  width: 340px;
+  height: 380px;
+  z-index: 5;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* 灯口亮核：同样以开口为中心 */
+.lamp-core {
+  position: absolute;
+  left: calc(var(--lamp-x) - 40px);
+  top: calc(var(--lamp-y) - 40px);
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 231, 195, 0.92),
+    rgba(255, 184, 107, 0.46) 44%,
+    transparent 74%
+  );
+  filter: blur(5px);
+  pointer-events: none;
+  z-index: 5;
+  will-change: transform;
+}
+
+/* ---------------- 灰尘颗粒 ---------------- */
+
+.dust-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 4;
+  /* 与光锥同一块区域 */
+  clip-path: polygon(
+    calc(var(--lamp-x) - 26px) var(--lamp-y),
+    calc(var(--lamp-x) + 26px) var(--lamp-y),
+    calc(var(--pool-x) + var(--pool-rx) * 0.95) calc(var(--pool-y) - 34px),
+    calc(var(--pool-x) - var(--pool-rx) * 0.95) calc(var(--pool-y) - 34px)
+  );
+  opacity: 0.6;
+}
+
+/* ---------------- 拉绳 ---------------- */
+
+.pull-cord {
+  position: absolute;
+  left: calc(var(--lamp-x) - 12px);
+  top: calc(var(--lamp-y) + 8px);
+  width: 24px;
+  height: 150px;
+  z-index: 6;
+  cursor: grab;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+.pull-cord:focus-visible {
+  outline: 2px solid var(--n-lamp);
+  outline-offset: 6px;
+}
+
+.cord-line {
+  stroke: rgba(255, 215, 140, 0.35);
+  stroke-width: 1;
+}
+
+.cord-bead {
+  fill: rgba(255, 215, 140, 0.55);
+  transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), fill 200ms;
+  transform-origin: center top;
+}
+
+.pull-cord:hover .cord-bead {
+  fill: rgba(255, 215, 140, 0.85);
+}
+
+.pull-cord.pulled .cord-bead {
+  transform: translateY(22px);
+}
+
+/* ---------------- 内容层 ---------------- */
+
+.desk-inner {
+  position: relative;
+  z-index: 9;
+  padding: 48px 0 0 48px;
+  max-width: 620px;
+}
+
+.desk-mark {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  color: var(--n-dim);
+}
+
+.desk-mark i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--n-lamp);
+  box-shadow: 0 0 10px rgba(255, 184, 107, 0.8);
+}
+
+.desk-title {
+  font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", Georgia, serif;
+  font-weight: 400;
+  font-size: clamp(36px, 4.4vw, 64px);
+  line-height: 1.24;
+  letter-spacing: -0.018em;
+  color: var(--n-ink);
+  margin: 76px 0 22px;
+  max-width: 11em;
+}
+
+.desk-title em {
+  font-style: normal;
+  background: linear-gradient(to bottom left, #ffd9a8 0%, #f2e8da 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.desk-sub {
+  font-size: 14px;
+  line-height: 1.9;
+  color: var(--n-dim);
+  max-width: 26em;
+  margin-bottom: 34px;
+}
+
+.lamp-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 24px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 184, 107, 0.24);
+  background: rgba(255, 184, 107, 0.06);
+  color: #ffd9a8;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 280ms var(--ease), border-color 280ms var(--ease),
+    transform 160ms var(--ease);
+}
+
+.lamp-switch:hover {
+  background: rgba(255, 184, 107, 0.14);
+  border-color: rgba(255, 184, 107, 0.45);
+}
+
+.lamp-switch:active {
+  transform: scale(0.97);
+}
+
+.lamp-switch:focus-visible {
+  outline: 2px solid var(--n-lamp);
+  outline-offset: 4px;
+}
+
+/* ---------------- 卡片 ---------------- */
+
+.desk-cards {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  pointer-events: none;
+}
+
+.card {
+  position: absolute;
+  pointer-events: auto;
+  padding: 16px 20px;
+  background: linear-gradient(172deg, #ede4d3 0%, #e5dbc8 100%);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 2px;
+  color: #241f19;
+  font-family: "Noto Serif SC", "Songti SC", Georgia, serif;
+  font-size: 15px;
+  line-height: 1.72;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 280ms var(--ease), filter 280ms var(--ease),
+    box-shadow 280ms var(--ease);
+  will-change: transform, filter;
+  max-width: 240px;
+}
+
+.card:hover {
+  transform: rotate(0deg) translateY(-6px) !important;
+  filter: brightness(1.14) !important;
+  box-shadow: -12px 26px 44px -14px rgba(0, 0, 0, 0.6) !important;
+  z-index: 15;
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--n-accent);
+  outline-offset: 4px;
+}
+
+.card .card-tag {
+  display: block;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  color: rgba(36, 31, 25, 0.42);
+  margin-bottom: 8px;
+}
+
+.card .card-done {
+  display: block;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(36, 31, 25, 0.15);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: rgba(36, 31, 25, 0.45);
+}
+
+.desk-night.departing .card {
+  animation: card-depart 480ms var(--ease) forwards;
+}
+
+.desk-night.departing .card:nth-child(1) { animation-delay: 0ms; }
+.desk-night.departing .card:nth-child(2) { animation-delay: 40ms; }
+.desk-night.departing .card:nth-child(3) { animation-delay: 80ms; }
+.desk-night.departing .card:nth-child(4) { animation-delay: 120ms; }
+.desk-night.departing .card:nth-child(5) { animation-delay: 160ms; }
+.desk-night.departing .card:nth-child(6) { animation-delay: 200ms; }
+
+@keyframes card-depart {
+  to {
+    transform: translateY(-40px) rotate(0deg) !important;
+    opacity: 0;
+  }
+}
+
+/* ---------------- 减少动效 ---------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .lamp-cone,
+  .light-pool { animation: none; }
+  .dust-canvas { display: none; }
+  .card { transition: none; }
+  .desk-night.departing .card { animation: none; opacity: 0; }
+}
+
+/* ---------------- 移动端 ---------------- */
+
+@media (max-width: 760px) {
+  .desk-night {
+    --lamp-x: 78%;
+    --lamp-y: 13%;
+    --pool-x: 50%;
+    --pool-y: 58%;
+    --pool-rx: 170px;
+  }
+
+  /* 手机上台面会随卡片变长，百分比若按元素高度算，灯与光池会被拉散。
+     这一层改成相对视口固定，位置才稳定。 */
+  .lamp-cone,
+  .light-pool,
+  .lamp-core,
+  .dust-canvas,
+  .lamp-svg,
+  .pull-cord {
+    position: fixed;
+  }
+
+  .lamp-svg {
+    width: 240px;
+    height: 268px;
+    left: calc(var(--lamp-x) - 155px);
+    top: calc(var(--lamp-y) - 166px);
+  }
+
+  .light-pool { height: 200px; }
+
+  .desk-inner { padding: 28px 20px 0; max-width: none; }
+  .desk-title { margin-top: 44px; }
+  .desk-sub { font-size: 13px; }
+
+  .desk-cards {
+    position: static;
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 48px 20px 72px;
+  }
+
+  .card {
+    position: static;
+    max-width: none;
+    transform: none !important;
+    filter: none !important;
+    box-shadow: -4px 10px 20px -6px rgba(0, 0, 0, 0.4);
+  }
+}

@@ -1,0 +1,55 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# --- 本地临时产物 / 工具状态（不是源码）---
+# /api/compile 的响应转储与调试页
+/g.json
+/p.html
+/p.json
+/t2.json
+# 其他设计 skill 的工作目录（7.5MB）
+.taste-skill/
+# 脚本生成物
+/scripts/out/
+
+# 环境变量模板纳入版本控制（真实密钥仍被上面的 .env* 排除）
+!.env.example

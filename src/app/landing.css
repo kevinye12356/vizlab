@@ -1,0 +1,1151 @@
+/* ==========================================================================
+   VIZLAB 首页 · direction: product-performs (seed 786938555)
+   冷灰地面 + 钴蓝唯一强调色 · 方角 · 轻字重 · 无渐变 · 静止物无阴影
+   ========================================================================== */
+
+.lg {
+  --bg: #eef0f3;
+  --surface: #e2e5ea;
+  --surface-2: #ffffff;
+  --ink: #0b0c0e;
+  --muted: #5d6470;
+  --accent: #1f2de6;
+  --accent-ink: #ffffff;
+  --line: #d3d8e0;
+
+  --margin: 40px;
+  /* 全页只有五档字号 */
+  --step-small: 14px;
+  --step-body: 17px;
+  --step-lead: 21px;
+  --step-head: clamp(26px, 2.2vw, 40px);
+  --display: clamp(42px, 5vw, 72px);
+
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC",
+    "Source Han Sans SC", sans-serif;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100svh;
+}
+
+.lg *,
+.lg *::before,
+.lg *::after {
+  box-sizing: border-box;
+}
+
+/* 重置一律走 :where()，选择器优先级为 0，绝不压掉后面的组件类 */
+.lg :where(h1, h2, h3, p, ul, dl) {
+  margin: 0;
+  padding: 0;
+}
+
+/* globals.css 里有 h1/h2 的元素级 font-family（宋体），
+   选择器优先级高于从 .lg 继承，这里必须显式压回去 */
+.lg h1,
+.lg h2,
+.lg h3,
+.lg p,
+.lg li,
+.lg dt,
+.lg dd,
+.lg summary,
+.lg label {
+  font-family: inherit;
+}
+
+.lg :where(ul) {
+  list-style: none;
+}
+
+.lg :where(a) {
+  color: inherit;
+  text-decoration: none;
+}
+
+.lg :where(button) {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.lg :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* ---------- 通用 ---------- */
+
+.lg-wrap {
+  padding-left: var(--margin);
+  padding-right: var(--margin);
+}
+
+.lg-section {
+  padding-top: 140px;
+}
+
+.lg-h2 {
+  font-size: var(--step-head);
+  font-weight: 300;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.lg-body {
+  font-size: var(--step-body);
+  line-height: 1.62;
+  color: var(--ink);
+}
+
+.lg-note {
+  font-size: var(--step-small);
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.lg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: var(--step-small);
+  font-weight: 500;
+  padding: 14px 22px;
+  border-radius: 0;
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.lg-btn:hover {
+  background: #1622b8;
+}
+
+.lg-btn:active {
+  transform: translateY(1px);
+}
+
+.lg-eyebrow-none {
+  display: none;
+}
+
+/* ---------- 导航 ---------- */
+
+.lg-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  margin-top: 28px;
+}
+
+.lg-wordmark {
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.lg-nav-links {
+  display: flex;
+  gap: 26px;
+  font-size: var(--step-small);
+  color: var(--muted);
+}
+
+.lg-nav-links a:hover {
+  color: var(--ink);
+}
+
+/* ---------- 首屏 ---------- */
+
+.lg-hero {
+  position: relative;
+  min-height: 100svh;
+  overflow: hidden;
+}
+
+.lg-hero-copy {
+  position: relative;
+  z-index: 2;
+  max-width: 660px;
+  margin-top: 118px;
+}
+
+.lg-h1 {
+  font-size: var(--display);
+  font-weight: 300;
+  line-height: 1.14;
+  letter-spacing: -0.018em;
+  margin-bottom: 32px;
+}
+
+.lg-h1 .line {
+  display: block;
+  overflow: hidden;
+  padding-bottom: 0.04em;
+}
+
+.lg-h1 .line > span {
+  display: block;
+}
+
+.lg-sub {
+  font-size: var(--step-lead);
+  line-height: 1.6;
+  max-width: 19.5em;
+  color: var(--ink);
+  margin-bottom: 30px;
+}
+
+.lg-hero-act {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.lg-hero-hint {
+  font-size: var(--step-small);
+  color: var(--muted);
+}
+
+.lg-hero-foot {
+  margin-top: 46px;
+  font-size: var(--step-small);
+  line-height: 1.7;
+  color: var(--muted);
+  max-width: 22em;
+}
+
+/* 舞台：钴蓝整块，左上切角，向右下出血 */
+.lg-stage {
+  position: absolute;
+  overflow: hidden;
+  left: calc(var(--margin) + (100% - var(--margin) * 2) * 0.3333);
+  right: 0;
+  top: 42%;
+  bottom: 0;
+  background: var(--accent);
+  clip-path: polygon(120px 0, 100% 0, 100% 100%, 0 100%, 0 120px);
+  z-index: 1;
+}
+
+.lg-stage-inner {
+  position: absolute;
+  left: 56px;
+  top: 56px;
+  width: 620px;
+}
+
+/* ---------- 产品片段（家规允许片段内部用自己的约定） ---------- */
+
+.frag {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.frag-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line); /* taste-skill-ignore hairline: 产品片段内部的面板边界，随 data-ui 保留 */
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.frag-head strong {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.frag-q {
+  padding: 16px 18px 18px;
+  border-bottom: 1px solid var(--line); /* taste-skill-ignore hairline: 原句区与图之间的分界，产品自己的面板 */
+
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+/* 原句解构：被点亮的那几个字 */
+.q-mark {
+  background: rgba(31, 45, 230, 0.1);
+  border-bottom: 2px solid rgba(31, 45, 230, 0.35);
+  padding: 0 2px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  cursor: default;
+}
+
+.q-mark.lit {
+  background: var(--accent);
+  border-bottom-color: var(--accent);
+  color: #fff;
+}
+
+/* 图 */
+.graph {
+  position: relative;
+  height: 392px;
+  padding: 14px 0 0;
+  overflow: hidden;
+}
+
+.graph svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.graph-edge {
+  stroke: #b9bfc9;
+  stroke-width: 1.5;
+  fill: none;
+  transition: stroke 0.15s, stroke-width 0.15s;
+}
+
+.graph-edge.lit {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.graph-edge-label {
+  font-size: 10.5px;
+  fill: #8d94a0;
+}
+
+.graph-edge-label.lit {
+  fill: var(--accent);
+}
+
+.gnode {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: block;
+  padding: 9px 10px 8px;
+  background: #fff;
+  border: 1px solid var(--line);
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.gnode b {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.gnode i {
+  display: block;
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.gnode.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+@keyframes gn-in {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+.gnode {
+  animation: gn-in 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.gnode:nth-of-type(2) { animation-delay: 0.06s; }
+.gnode:nth-of-type(3) { animation-delay: 0.12s; }
+.gnode:nth-of-type(4) { animation-delay: 0.18s; }
+.gnode:nth-of-type(5) { animation-delay: 0.24s; }
+.gnode:nth-of-type(6) { animation-delay: 0.3s; }
+
+.gnode.on i {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* 分镜面板 */
+.shotlist {
+  padding: 4px 0;
+}
+
+.shotrow {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 9px 14px;
+  border-bottom: 1px solid #ebedf1; /* taste-skill-ignore hairline: 分镜是表格形状的数据，行线属正当用途 */
+
+  transition: background 0.15s, color 0.15s;
+}
+
+.shotrow:last-child {
+  border-bottom: 0;
+}
+
+.shotrow .sn {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.shotrow .sc {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.shotrow .sd {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.shotrow .sr {
+  grid-column: 2 / -1;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.shotrow.marked {
+  background: rgba(31, 45, 230, 0.06);
+  /* 内嵌色条，是「填充形状」而不是投影：用来替代细线做标记 */
+  box-shadow: inset 3px 0 0 var(--accent); /* taste-skill-ignore shadow */
+}
+
+.shotrow.dim {
+  opacity: 0.55;
+}
+
+/* 检查清单 */
+.checks {
+  padding: 6px 0;
+}
+
+.checkrow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+}
+
+.checkrow .cid {
+  font-size: 11px;
+  color: var(--muted);
+  width: 22px;
+  flex-shrink: 0;
+}
+
+.checkrow .ct {
+  flex: 1;
+}
+
+.checkrow .cm {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.checkrow.warn {
+  background: rgba(147, 71, 10, 0.09);
+  box-shadow: inset 3px 0 0 #93470a; /* taste-skill-ignore shadow: 同上，内嵌色条不是投影 */
+}
+
+.checkrow.warn .cm {
+  color: #93470a;
+  font-weight: 500;
+}
+
+/* 交接包：真代码块，等宽在此处是正当的 */
+.frag-code {
+  margin: 0;
+  padding: 14px 16px;
+  background: #0b0c0e;
+  color: #d7dbe2;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.65;
+  overflow: auto;
+  max-height: 300px;
+}
+
+.frag-code b {
+  color: #8f9dff;
+  font-weight: 400;
+}
+
+/* ---------- 图不是插画：面板 + 两侧批注 ---------- */
+
+.feat {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 380px 1fr;
+  gap: 40px;
+  align-items: start;
+}
+
+.feat-head {
+  grid-column: 1 / 2;
+  text-align: right;
+  padding-top: 4px;
+}
+
+.feat-notes-l {
+  grid-column: 1 / 2;
+  grid-row: 2;
+  text-align: right;
+  position: relative;
+  align-self: stretch;
+  min-height: 660px;
+}
+
+.feat-panel {
+  grid-column: 2 / 3;
+  grid-row: 1 / 4;
+}
+
+.feat-notes-r {
+  grid-column: 3 / 4;
+  grid-row: 2;
+  position: relative;
+  align-self: stretch;
+  min-height: 660px;
+}
+
+.fn {
+  position: absolute;
+  top: var(--t, 0px);
+  width: 100%;
+  max-width: 24ch;
+  transition: color 0.15s;
+  cursor: default;
+}
+
+.fn:last-child {
+  margin-bottom: 0;
+}
+
+.feat-notes-l .fn {
+  right: 0;
+  text-align: right;
+}
+
+.fn b {
+  display: block;
+  font-size: var(--step-body);
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.fn span {
+  font-size: var(--step-small);
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.fn.on b {
+  color: var(--accent);
+}
+
+/* ---------- 三次交换 ---------- */
+
+.hiw {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 24px;
+}
+
+.hiw-head {
+  grid-column: 1 / 4;
+  position: sticky;
+  top: 96px;
+  align-self: start;
+}
+
+.hiw-body {
+  grid-column: 4 / 12;
+  max-width: 760px;
+}
+
+.ex {
+  margin-bottom: 88px;
+}
+
+.ex:last-child {
+  margin-bottom: 0;
+}
+
+.ex-line {
+  font-size: var(--step-lead);
+  font-weight: 500;
+  line-height: 1.5;
+  margin-bottom: 16px;
+  letter-spacing: -0.01em;
+}
+
+.ex-call {
+  background: var(--surface);
+  padding: 18px 20px;
+  font-size: var(--step-body);
+  line-height: 1.7;
+  border-radius: 0;
+}
+
+.ex-call .who {
+  display: block;
+  font-size: var(--step-small);
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.ex-resp {
+  margin-left: 56px;
+  margin-top: 16px;
+}
+
+.ex-3 .ex-resp {
+  margin-left: 56px;
+  width: 760px;
+  max-width: calc(100% - 56px);
+}
+
+/* ---------- 一处刻意的留白：一张图 ---------- */
+
+.lg-band {
+  margin-top: 140px;
+  height: 62svh;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.lg-band {
+  display: flex;
+  gap: 0;
+}
+
+.lg-band figure {
+  margin: 0;
+  overflow: hidden;
+  height: 100%;
+  transform: translateY(var(--band-y, 0px));
+}
+
+.lg-band figure:first-child {
+  flex: 2.15;
+}
+
+.lg-band figure:last-child {
+  flex: 1;
+}
+
+.lg-band img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: band-drift 26s ease-in-out infinite alternate;
+}
+
+.lg-band figure:last-child img {
+  animation-delay: -9s;
+  object-position: 62% 50%;
+}
+
+@keyframes band-drift {
+  from { transform: scale(1); }
+  to { transform: scale(1.055); }
+}
+
+@media (max-width: 1080px) {
+  .lg-band {
+    margin-top: 88px;
+    height: 42svh;
+  }
+}
+
+/* ---------- 经得起追问：数字 ---------- */
+
+.proof-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 40px;
+  flex-wrap: wrap;
+  padding: 38px 0 6px;
+}
+
+.proof-item {
+  flex: 1 1 0;
+  min-width: 140px;
+  max-width: 260px;
+}
+
+.proof-num {
+  font-size: var(--step-head);
+  font-weight: 300;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+}
+
+.proof-lab {
+  font-size: var(--step-small);
+  line-height: 1.5;
+  color: var(--muted);
+  margin-top: 8px;
+  max-width: 16em;
+}
+
+/* ---------- 常见问题 ---------- */
+
+.faq {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 24px;
+}
+
+.faq-head {
+  grid-column: 1 / 5;
+  position: sticky;
+  top: 96px;
+  align-self: start;
+}
+
+.faq-list {
+  grid-column: 5 / 13;
+}
+
+.faq-item {
+  background: var(--surface);
+  margin-bottom: 8px;
+  border-radius: 0;
+}
+
+.faq-item summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 72px;
+  padding: 18px 24px;
+  font-size: var(--step-body);
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq-plus {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.faq-plus::before,
+.faq-plus::after {
+  content: "";
+  position: absolute;
+  background: currentColor;
+}
+
+.faq-plus::before {
+  left: 0;
+  top: 6.5px;
+  width: 16px;
+  height: 3px;
+}
+
+.faq-plus::after {
+  left: 6.5px;
+  top: 0;
+  width: 3px;
+  height: 16px;
+  transition: transform 0.2s ease;
+}
+
+.faq-item[open] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.faq-item[open] .faq-plus::after {
+  transform: rotate(90deg);
+}
+
+.faq-answer {
+  padding: 0 24px 22px;
+  font-size: var(--step-body);
+  line-height: 1.7;
+  max-width: 52ch;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* ---------- 结尾：第一屏已经打开 ---------- */
+
+.lg-cta {
+  position: relative;
+  margin-top: 160px;
+  min-height: 90svh;
+  background: var(--accent);
+  color: var(--accent-ink);
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 24px;
+  padding: 0 var(--margin) 40px;
+  align-items: end;
+}
+
+.cta-close {
+  grid-column: 1 / 6;
+  padding-bottom: 14px;
+}
+
+.cta-line {
+  font-size: var(--display);
+  font-weight: 300;
+  line-height: 0.92;
+  letter-spacing: -0.035em;
+  margin-bottom: 22px;
+}
+
+.cta-line span {
+  display: block;
+}
+
+.cta-sub {
+  font-size: var(--step-body);
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.82);
+  max-width: 24em;
+}
+
+.cta-dialog {
+  grid-column: 7 / 12;
+  align-self: center;
+  width: 440px;
+  max-width: 100%;
+  background: #fff;
+  color: var(--ink);
+  /* 真实的对话框，浮在页面之上，家规明确允许投影 */
+  box-shadow: 0 24px 60px -18px rgba(0, 0, 0, 0.45); /* taste-skill-ignore shadow */
+  margin-bottom: 60px;
+}
+
+.cta-dialog .frag-head {
+  padding: 14px 18px;
+}
+
+.cta-field {
+  padding: 18px;
+}
+
+.cta-field label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.cta-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: #fff;
+  font: inherit;
+  font-size: var(--step-body);
+  line-height: 1.6;
+  color: var(--ink);
+  padding: 11px 12px;
+  resize: none;
+  border-radius: 0;
+}
+
+.cta-seg {
+  display: flex;
+  gap: 0;
+  margin-top: 14px;
+}
+
+.cta-seg button {
+  flex: 1;
+  border: 1px solid var(--line);
+  padding: 10px 0;
+  font-size: var(--step-small);
+  color: var(--muted);
+  background: #fff;
+}
+
+.cta-seg button + button {
+  border-left: 0;
+}
+
+.cta-seg button.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.cta-go {
+  margin-top: 14px;
+  width: 100%;
+  justify-content: center;
+}
+
+/* ---------- 页脚 ---------- */
+
+.lg-foot {
+  padding: 64px var(--margin) 48px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.foot-name {
+  font-size: var(--display);
+  font-weight: 300;
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+}
+
+.foot-meta {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted);
+  text-align: right;
+}
+
+/* ---------- 动效 ---------- */
+
+@keyframes lg-rise {
+  from {
+    transform: translateY(110%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes lg-fade {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.lg-h1 .line > span {
+  animation: lg-rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.lg-h1 .line:nth-child(2) > span {
+  animation-delay: 0.11s;
+}
+
+.lg-sub,
+.lg-hero-act {
+  animation: lg-fade 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both;
+}
+
+.lg-stage {
+  animation: lg-fade 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.28s both;
+}
+
+/* 出场：由 IntersectionObserver 加 .seen */
+.reveal > * {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.62s ease, transform 0.62s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal.seen > * {
+  opacity: 1;
+  transform: none;
+}
+
+.reveal.seen > *:nth-child(2) {
+  transition-delay: 0.07s;
+}
+
+.reveal.seen > *:nth-child(3) {
+  transition-delay: 0.14s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg *,
+  .lg *::before,
+  .lg *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .reveal > * {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- 手机 ---------- */
+
+@media (max-width: 1080px) {
+  .lg {
+    --margin: 20px;
+  }
+
+  .lg-hero {
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .lg-hero-copy {
+    margin-top: 44px;
+    max-width: none;
+  }
+
+  .lg-h1 {
+    font-size: 10vw;
+  }
+
+  .lg-sub {
+    font-size: 16px;
+  }
+
+  .lg-stage {
+    position: relative;
+    left: 0;
+    right: 0;
+    top: 0;
+    margin: 40px calc(var(--margin) * -1) 0;
+    min-height: 520px;
+    clip-path: polygon(64px 0, 100% 0, 100% 100%, 0 100%, 0 64px);
+  }
+
+  .lg-stage-inner {
+    position: relative;
+    left: 16px;
+    top: 40px;
+    width: 620px;
+  }
+
+  .lg-section {
+    padding-top: 88px;
+  }
+
+  .feat {
+    display: block;
+  }
+
+  .feat-head {
+    text-align: left;
+    margin-bottom: 22px;
+  }
+
+  .feat-panel {
+    margin-bottom: 26px;
+  }
+
+  .feat-notes-l,
+  .feat-notes-r {
+    text-align: left;
+    padding-top: 0;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+  }
+
+  .fn {
+    position: static;
+    max-width: none;
+  }
+
+  .feat-notes-l .fn {
+    text-align: left;
+  }
+
+  .hiw,
+  .faq {
+    display: block;
+  }
+
+  .hiw-head,
+  .faq-head {
+    position: static;
+    margin-bottom: 24px;
+  }
+
+  .hiw-body {
+    max-width: none;
+  }
+
+  .ex {
+    margin-bottom: 56px;
+  }
+
+  .ex-resp,
+  .ex-3 .ex-resp {
+    margin-left: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .faq-item summary {
+    font-size: 17px;
+    padding: 16px 18px;
+  }
+
+  .lg-cta {
+    display: block;
+    padding: 56px var(--margin) 40px;
+    min-height: 84svh;
+  }
+
+  .cta-close {
+    padding-bottom: 0;
+    margin-bottom: 34px;
+  }
+
+  .cta-line {
+    font-size: 13vw;
+  }
+
+  .cta-dialog {
+    width: 100%;
+    margin-bottom: 0;
+  }
+
+  .lg-foot {
+    padding-top: 48px;
+  }
+
+  .foot-meta {
+    text-align: left;
+  }
+}
