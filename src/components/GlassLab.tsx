@@ -26,7 +26,7 @@ type MotionMode = "full" | "simple";
 type Phase = "landing" | "compiling" | "result";
 type Abstraction = 0 | 1 | 2;
 type Mark = "qt" | "cond" | "phen";
-type Stage = 0 | 1 | 2 | 3;
+type Stage = 0 | 1 | 2 | 3 | 4;
 
 interface CompileOptions {
   audience: string;
@@ -150,6 +150,15 @@ const SHOTS: Shot[] = [
   { no: "06", type: "示意", dur: 6, text: "肾小管重吸收减少，原尿悄悄变多" },
   { no: "07", type: "特写", dur: 4, text: "膀胱充盈加快，压力信号提前上传" },
   { no: "08", type: "全景", dur: 4, text: "收束：身体的节水阀被悄悄关小", tone: "amber" },
+];
+
+// 编译转场用的四槽链：两端是"用户自己的词"，中间是产品补出来的环节。
+// 取真实 NODES 的机制档文案，第 3 槽用 missing 节点（全片情绪峰值）。
+const CHAIN: Array<{ id: string; kind: string; from?: "condition" | "phenomenon" }> = [
+  { id: "n1", kind: "start", from: "condition" },
+  { id: "n2", kind: "mid" },
+  { id: "n5", kind: "star" },
+  { id: "n8", kind: "terminal", from: "phenomenon" },
 ];
 
 const FLOATS = [
@@ -384,15 +393,44 @@ export default function GlassLab() {
       setStage(1);
       timers.current.forEach((t) => window.clearTimeout(t));
       timers.current = [
-        window.setTimeout(() => setStage(2), 400), // 拆句 400–1000ms
-        window.setTimeout(() => setStage(3), 1000), // 重组 1000–1800ms
-        window.setTimeout(() => setPhase("result"), 1900), // 展开
+        window.setTimeout(() => setStage(2), 420), // 拆解 420–1080ms
+        window.setTimeout(() => setStage(3), 1080), // 补链 1080–1780ms
+        window.setTimeout(() => setStage(4), 1780), // 落定
+        window.setTimeout(() => setPhase("result"), 2150), // 交棒给结果页
       ];
     },
     [rec],
   );
 
+  /* 转场可跳过：Esc 或点「跳过」直接落到结果页 */
+  const skipCompile = useCallback(() => {
+    timers.current.forEach((t) => window.clearTimeout(t));
+    timers.current = [];
+    setPhase("result");
+  }, []);
+
+  useEffect(() => {
+    if (phase !== "compiling") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") skipCompile();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [phase, skipCompile]);
+
   useEffect(() => () => timers.current.forEach((t) => window.clearTimeout(t)), []);
+
+  /* 调试钩子：?freeze=N 把转场冻结在第 N 拍（1–4），
+     便于静态核验每一拍的布局，不用跟 2.15s 的动画抢时间。 */
+  useEffect(() => {
+    const n = Number(new URLSearchParams(window.location.search).get("freeze"));
+    if (!n || n < 1 || n > 4) return;
+    setText(EXAMPLE);
+    setCompiledQuestion(EXAMPLE);
+    setCompiledRec(analyze(EXAMPLE));
+    setPhase("compiling");
+    setStage(n as Stage);
+  }, []);
 
   /* ---------- FLIP：输入台缩至顶部 ---------- */
   useLayoutEffect(() => {
@@ -415,6 +453,24 @@ export default function GlassLab() {
   }, [phase, motion]);
 
   /* ---------- 交互处理 ---------- */
+  /* 抽象档是 radiogroup，必须支持方向键 + roving tabindex。
+     原先 3 个按钮各自是独立 tab stop 且无法用方向键切换 ——
+     既费步数，也不符合 radiogroup 的既定键盘范式。 */
+  const absRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const onAbsKey = (e: React.KeyboardEvent<HTMLButtonElement>, i: number) => {
+    const delta =
+      e.key === "ArrowRight" || e.key === "ArrowDown"
+        ? 1
+        : e.key === "ArrowLeft" || e.key === "ArrowUp"
+          ? -1
+          : 0;
+    if (!delta) return;
+    e.preventDefault();
+    const next = (i + delta + ABS.length) % ABS.length;
+    switchAbs(next as Abstraction);
+    absRefs.current[next]?.focus();
+  };
+
   /* 鼠标跟随高光：rAF 合并事件 + 每帧最多读一次布局。
      之前每个 mousemove 都 getBoundingClientRect() + setProperty，
      等于每次事件强制布局并重绘 ::after；120Hz 鼠标下每秒上百次。
@@ -496,13 +552,13 @@ export default function GlassLab() {
   const canDrag = () =>
     typeof window !== "undefined" && window.matchMedia("(min-width: 1241px)").matches;
 
-  const onNodeDown = (e: React.PointerEvent<HTMLDivElement>, id: string) => {
+  const onNodeDown = (e: React.PointerEvent<HTMLElement>, id: string) => {
     if (!canDrag()) return;
     dragStart.current = { x: e.clientX, y: e.clientY };
     e.currentTarget.setPointerCapture(e.pointerId);
     setDrag({ id, dx: 0, dy: 0, active: true });
   };
-  const onNodeMove = (e: React.PointerEvent<HTMLDivElement>, id: string) => {
+  const onNodeMove = (e: React.PointerEvent<HTMLElement>, id: string) => {
     if (!dragStart.current || drag?.id !== id || !drag.active) return;
     setDrag({
       id,
@@ -571,9 +627,9 @@ export default function GlassLab() {
 
   /* ---------- 渲染数据 ---------- */
   const stageClass =
-    phase === "compiling" ? (["", "is-scan", "is-split", "is-recombine"][stage] ?? "") : "";
-  const stageNames = ["", "扫描文本", "拆分概念", "重组因果链"];
-  const stageProgress = ["0", "", "0.5", "1"][stage] ?? "0";
+    phase === "compiling" ? (["", "is-scan", "is-split", "is-recombine", "is-unfold"][stage] ?? "") : "";
+  const stageNames = ["", "定睛 · 定位概念", "拆解 · 剥离提问", "补链 · 填补因果", "落定"];
+  const stageProgress = ["0", "0.15", "0.5", "0.85", "1"][stage] ?? "0";
   const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
   const template = useMemo(() => buildTemplate(compiledQuestion), [compiledQuestion]);
 
@@ -633,7 +689,17 @@ export default function GlassLab() {
                     style={{ left: `calc(${abstraction} * (100% - 8px) / 3 + 4px)` }}
                   />
                   {ABS.map((a, i) => (
-                    <button key={a.name} role="radio" aria-checked={abstraction === i} onClick={() => switchAbs(i as Abstraction)}>
+                    <button
+                      key={a.name}
+                      role="radio"
+                      aria-checked={abstraction === i}
+                      tabIndex={abstraction === i ? 0 : -1}
+                      ref={(el) => {
+                        absRefs.current[i] = el;
+                      }}
+                      onKeyDown={(e) => onAbsKey(e, i)}
+                      onClick={() => switchAbs(i as Abstraction)}
+                    >
                       {a.name}
                     </button>
                   ))}
@@ -662,41 +728,66 @@ export default function GlassLab() {
                   })}
                 </svg>
 
-                {NODES.map((n, i) => (
-                  <div
-                    key={n.id}
-                    className={[
-                      "gl-node",
-                      n.start ? "gl-node--start" : "",
-                      n.terminal ? "gl-node--terminal" : "",
-                      n.missing ? "gl-node--missing" : "",
-                      n.bypass ? "gl-node--bypass" : "",
-                      drag?.id === n.id && drag.active ? "dragging" : "",
-                      n.id === hover ? "hover" : "",
-                      nodeDim(n.id) ? "dim" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    style={{
-                      left: n.x,
-                      top: n.y,
-                      width: n.bypass ? 160 : NODE_W,
-                      transform:
-                        drag?.id === n.id
-                          ? `translate(${drag.dx}px, ${drag.dy}px) scale(1.04)`
-                          : undefined,
-                    }}
-                    onPointerDown={(e) => onNodeDown(e, n.id)}
-                    onPointerMove={(e) => onNodeMove(e, n.id)}
-                    onPointerUp={onNodeUp}
-                    onPointerEnter={() => !n.bypass && setHover(n.id)}
-                    onPointerLeave={() => setHover(null)}
-                    aria-label={`${n.bypass ? "旁路" : `概念 ${i + 1}`}：${n.labels[abstraction]}`}
-                  >
-                    <span className="gl-node__idx">{n.bypass ? "BYPASS" : String(i + 1).padStart(2, "0")}</span>
-                    <span className="gl-node__label">{n.labels[abstraction]}</span>
-                  </div>
-                ))}
+                {NODES.map((n, i) => {
+                  /* 上下游关系：原先只有 hover 才可见，读屏与键盘用户永远拿不到。
+                     改成 <button> + aria-describedby 后，聚焦即可获得同样的信息。 */
+                  const ups = EDGES.filter((e) => e.to === n.id)
+                    .map((e) => NODES.find((x) => x.id === e.from)?.labels[abstraction])
+                    .filter(Boolean) as string[];
+                  const downs = EDGES.filter((e) => e.from === n.id)
+                    .map((e) => NODES.find((x) => x.id === e.to)?.labels[abstraction])
+                    .filter(Boolean) as string[];
+                  const desc = [
+                    ups.length ? `上游：${ups.join("、")}` : "",
+                    downs.length ? `下游：${downs.join("、")}` : "",
+                  ]
+                    .filter(Boolean)
+                    .join("；");
+                  return (
+                    <button
+                      type="button"
+                      key={n.id}
+                      className={[
+                        "gl-node",
+                        n.start ? "gl-node--start" : "",
+                        n.terminal ? "gl-node--terminal" : "",
+                        n.missing ? "gl-node--missing" : "",
+                        n.bypass ? "gl-node--bypass" : "",
+                        drag?.id === n.id && drag.active ? "dragging" : "",
+                        n.id === hover ? "hover" : "",
+                        nodeDim(n.id) ? "dim" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      style={{
+                        left: n.x,
+                        top: n.y,
+                        width: n.bypass ? 160 : NODE_W,
+                        transform:
+                          drag?.id === n.id
+                            ? `translate(${drag.dx}px, ${drag.dy}px) scale(1.04)`
+                            : undefined,
+                      }}
+                      onPointerDown={(e) => onNodeDown(e, n.id)}
+                      onPointerMove={(e) => onNodeMove(e, n.id)}
+                      onPointerUp={onNodeUp}
+                      onPointerEnter={() => !n.bypass && setHover(n.id)}
+                      onPointerLeave={() => setHover(null)}
+                      onFocus={() => !n.bypass && setHover(n.id)}
+                      onBlur={() => setHover(null)}
+                      aria-label={`${n.bypass ? "旁路" : `概念 ${i + 1}`}：${n.labels[abstraction]}`}
+                      aria-describedby={desc ? `nd-${n.id}` : undefined}
+                    >
+                      <span className="gl-node__idx">{n.bypass ? "BYPASS" : String(i + 1).padStart(2, "0")}</span>
+                      <span className="gl-node__label">{n.labels[abstraction]}</span>
+                      {desc && (
+                        <span id={`nd-${n.id}`} className="sr-only">
+                          {desc}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
               <p className="gl-sub" style={{ textAlign: "center", marginTop: 14 }}>
                 {ABS[abstraction].hint}
@@ -806,18 +897,19 @@ export default function GlassLab() {
           </header>
 
           <section className="gl-hero">
-            <p className="gl-hero__kicker">KNOWLEDGE → VIDEO COMPILER</p>
             <h1>
               把一句好奇，<em>编译</em>成一支科普视频
             </h1>
             <p className="gl-hero__sub">抽象概念结构 × 可执行提示词 · 输入一句“条件 + 现象”式的疑问试试</p>
           </section>
 
-          <div className="gl-desk-zone">
+          <div className={`gl-desk-zone${stageClass ? ` ${stageClass}` : ""}`}>
+            {/* 输入台 + 其正下方的编译台（共用一层定位上下文） */}
+            <div className="gl-desk-wrap">
             {/* 玻璃输入台 */}
             <div
               ref={deskRef}
-              className={`glass glass--spot gl-desk${stageClass ? ` ${stageClass}` : ""}`}
+              className="glass glass--spot gl-desk"
               onMouseMove={onDeskMove}
             >
               <div className="gl-field">
@@ -859,11 +951,47 @@ export default function GlassLab() {
                 {phase === "compiling" ? "编译中" : "编译"}
                 <span>Enter ↵</span>
               </button>
-              {/* 编译转场：扫描线 + 拆分飞块 */}
-              <span className="gl-scanline" aria-hidden="true" />
-              <span className="gl-fly gl-fly--1" aria-hidden="true" />
-              <span className="gl-fly gl-fly--2" aria-hidden="true" />
-              <span className="gl-fly gl-fly--3" aria-hidden="true" />
+            </div>
+
+            {/* 编译转场 · 编译四拍：主角是"你那句话"本身 */}
+            {phase === "compiling" && (
+              <div className="gl-trans">
+                {CHAIN.flatMap((c, i) => {
+                  const node = NODES.find((n) => n.id === c.id)!;
+                  const userWord =
+                    c.from === "condition"
+                      ? compiledRec?.condition
+                      : c.from === "phenomenon"
+                        ? compiledRec?.phenomenon
+                        : undefined;
+                  const chip = (
+                    <div key={`c${i}`} className={`gl-tchip gl-tchip--${c.kind}`} aria-hidden="true">
+                      {userWord && <span className="gl-tchip__user">{userWord}</span>}
+                      <span className="gl-tchip__node">{node.labels[1]}</span>
+                    </div>
+                  );
+                  return i < CHAIN.length - 1
+                    ? [
+                        chip,
+                        <span
+                          key={`e${i}`}
+                          className={`gl-tedge gl-tedge--${i + 1}`}
+                          aria-hidden="true"
+                        />,
+                      ]
+                    : [chip];
+                })}
+                <div className="gl-trans__foot">
+                  <span className="gl-trans__beat">{stageNames[stage]}</span>
+                  <span className="gl-trans__bar">
+                    <i style={{ ["--p" as string]: stageProgress } as CSSProperties} />
+                  </span>
+                  <button type="button" className="gl-trans__skip" onClick={skipCompile}>
+                    跳过 <kbd>Esc</kbd>
+                  </button>
+                </div>
+              </div>
+            )}
             </div>
 
             {/* 阶段说明 */}
@@ -933,10 +1061,12 @@ export default function GlassLab() {
             {FLOATS.map((f, i) => (
               <button
                 key={i}
-                tabIndex={-1}
                 className="glass gl-float-card"
                 style={{ left: `${f.x}%`, top: `${f.y}%`, ["--r" as string]: `${f.r}deg`, ["--d" as string]: `${f.d}s` } as CSSProperties}
-                onClick={() => setText(f.t)}
+                onClick={() => {
+                  setText(f.t);
+                  inputRef.current?.focus();
+                }}
               >
                 {f.t}
               </button>

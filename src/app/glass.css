@@ -14,9 +14,15 @@
   --bg: #070B14;
   --bg-deep: #05080F;
   --ink: #E8EEF7;
+  /* 次要文字两档。WCAG AA 要求标签/正文 ≥4.5:1。
+     实测（毛玻璃面板底色 rgb(15,21,32) 上）：
+       0.34 → 2.8:1 ✗   0.20 → 1.7:1 ✗   0.58 → 5.9:1 ✓   0.52 → 4.9:1 ✓
+     深色底上放不下三档低对比文字，故收敛为两档；更低的层级
+     改由字号 / 字重 / 字距表达（craft-floor 也要求强调靠字重而非颜色）。
+     ghost 是 faint 的旧名，仅为兼容保留，勿再用于需要区分的层级。 */
   --ink-dim: rgba(232, 238, 247, 0.58);
-  --ink-faint: rgba(232, 238, 247, 0.34);
-  --ink-ghost: rgba(232, 238, 247, 0.2);
+  --ink-faint: rgba(232, 238, 247, 0.52);
+  --ink-ghost: rgba(232, 238, 247, 0.52);
 
   --cyan: #5CE1E6;
   --cyan-soft: rgba(92, 225, 230, 0.14);
@@ -79,7 +85,28 @@ body {
   overflow-x: hidden;
 }
 
+/* ============================================================
+   浏览器原生表面：没画的部分也要带上设计
+   （craft-floor 指名要主题化：选区 / 光标 / 滚动条 / 下划线偏移）
+   ============================================================ */
 ::selection { background: rgba(92, 225, 230, 0.25); color: var(--ink); }
+
+* { caret-color: var(--cyan); }
+
+html {
+  scrollbar-color: rgba(146, 180, 220, 0.26) transparent;
+  scrollbar-width: thin;
+}
+.gl-code {
+  scrollbar-color: rgba(92, 225, 230, 0.34) transparent;
+  scrollbar-width: thin;
+}
+
+/* 中文小字的下划线贴字面会糊，抬高一点、加粗一点 */
+:where(a, u, .gl-mirror span) {
+  text-underline-offset: 0.3em;
+  text-decoration-thickness: 1.5px;
+}
 
 :focus-visible {
   outline: 2px solid var(--cyan);
@@ -222,10 +249,6 @@ button { font-family: inherit; cursor: pointer; }
   font-family: var(--font-mono); font-size: 12px; color: var(--ink-dim);
 }
 .gl-hero { text-align: center; padding: 8vh 24px 0; }
-.gl-hero__kicker {
-  font-family: var(--font-mono); font-size: 11px;
-  letter-spacing: 0.3em; color: var(--cyan); margin-bottom: 18px;
-}
 .gl-hero h1 {
   font-size: clamp(26px, 4.2vw, 46px); font-weight: 300;
   letter-spacing: 0.02em; line-height: 1.35;
@@ -299,35 +322,223 @@ button { font-family: inherit; cursor: pointer; }
 .gl-compile:active { transform: translateY(0) scale(0.98); }
 .gl-compile:disabled { filter: saturate(0.3) brightness(0.6); cursor: not-allowed; }
 
-/* 编译转场：扫描线 / 拆分 / 重组 */
-.gl-scanline {
-  position: absolute; left: 16px; right: 130px; height: 2px; top: 20%;
-  background: linear-gradient(90deg, transparent, var(--cyan) 45%, transparent);
-  opacity: 0; pointer-events: none; border-radius: 2px;
+/* ============================================================
+   编译转场 · 「编译四拍」
+   主角是用户那句话本身：被拆成概念、再补上没说出口的因果环节。
+   取代原先三个无文字、无含义的匿名方块（.gl-fly）。
+   全部只动 transform / opacity / filter，保 60fps。
+   ============================================================ */
+/* 把输入台单独包一层定位上下文，编译台就能精确锚在它正下方，
+   不受状态行/选项条高度变化影响（之前锚在 zone 上，结果跑到了上方）。 */
+.gl-desk-wrap { position: relative; width: min(720px, 100%); }
+
+.gl-trans {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 20px); /* 紧贴输入台下方 —— "落进机器"的动线 */
+  width: 100%;
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: 1fr 24px 1fr 24px 1fr 24px 1fr;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
 }
-.gl-desk.is-scan .gl-scanline { animation: gl-scan 400ms var(--ease) both; }
-@keyframes gl-scan {
-  0% { top: 14%; opacity: 0; }
-  35% { opacity: 1; }
-  100% { top: 86%; opacity: 0; }
+.gl-desk-zone.is-scan .gl-trans,
+.gl-desk-zone.is-split .gl-trans,
+.gl-desk-zone.is-recombine .gl-trans,
+.gl-desk-zone.is-unfold .gl-trans { opacity: 1; }
+
+/* 编译期间把状态行/识别行/选项条让位给编译台（现在是它在讲故事）。
+   用 opacity 而非 display —— 状态行的 aria-live 要留给读屏用户。 */
+.gl-desk-zone.is-scan .gl-stage,
+.gl-desk-zone.is-scan .gl-rec,
+.gl-desk-zone.is-scan .gl-opts,
+.gl-desk-zone.is-split .gl-stage,
+.gl-desk-zone.is-split .gl-rec,
+.gl-desk-zone.is-split .gl-opts,
+.gl-desk-zone.is-recombine .gl-stage,
+.gl-desk-zone.is-recombine .gl-rec,
+.gl-desk-zone.is-recombine .gl-opts,
+.gl-desk-zone.is-unfold .gl-stage,
+.gl-desk-zone.is-unfold .gl-rec,
+.gl-desk-zone.is-unfold .gl-opts {
+  opacity: 0; pointer-events: none;
+  transition: opacity 240ms var(--ease);
 }
-.gl-fly {
-  position: absolute; width: 44px; height: 28px; border-radius: 8px;
-  background: rgba(92, 225, 230, 0.12);
-  border: 1px solid rgba(92, 225, 230, 0.4);
+
+/* 编译台页脚：拍名 + 进度 + 跳过 */
+.gl-trans__foot {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  margin-top: 16px;
+}
+.gl-trans__beat { font-size: 12px; color: var(--ink-dim); letter-spacing: 0.06em; }
+.gl-trans__bar {
+  width: 96px; height: 2px; border-radius: 2px;
+  background: rgba(146, 180, 220, 0.2); overflow: hidden;
+}
+.gl-trans__bar i {
+  display: block; height: 100%; width: 100%;
+  background: var(--cyan);
+  transform: scaleX(var(--p, 0)); transform-origin: left center;
+  transition: transform 420ms var(--ease);
+}
+
+/* ---------- 槽位 ---------- */
+.gl-tchip {
+  position: relative;
+  min-height: 64px;
+  display: grid; place-items: center;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  border: 1px dashed rgba(146, 180, 220, 0.26);
+  background: rgba(146, 180, 220, 0.03);
+  overflow: hidden;
+  transition: border-color 460ms var(--ease), background 460ms var(--ease);
+}
+.gl-tchip__node {
+  font-size: 12.5px; line-height: 1.36; text-align: center;
+  color: var(--ink-dim); opacity: 0;
+}
+/* 用户自己的词：从输入框落下，途中与"编译结果"交叉淡入 */
+.gl-tchip__user {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  font-size: 13px; font-weight: 500; letter-spacing: 0.02em;
   opacity: 0; pointer-events: none;
 }
-.gl-fly--1 { left: 22%; bottom: 30%; }
-.gl-fly--2 { left: 46%; bottom: 55%; }
-.gl-fly--3 { left: 66%; bottom: 26%; }
-.gl-desk.is-recombine .gl-fly { animation: gl-fly 800ms var(--ease) both; }
-.gl-desk.is-recombine .gl-fly--2 { animation-delay: 120ms; }
-.gl-desk.is-recombine .gl-fly--3 { animation-delay: 240ms; }
-@keyframes gl-fly {
-  0% { transform: translateY(26px) scale(0.5); opacity: 0; }
-  45% { opacity: 1; }
-  100% { transform: translateY(-56px) scale(1); opacity: 0; }
+.gl-tchip--cond .gl-tchip__user { color: var(--blue); }
+.gl-tchip--phen .gl-tchip__user { color: var(--teal); }
+.gl-tchip--start { border-style: solid; border-color: var(--cyan-line); }
+.gl-tchip--terminal { border-style: solid; border-color: var(--amber-line); }
+
+/* 拍一 · 定睛：工作台依次就位 */
+.is-scan .gl-tchip { animation: tchip-slot 520ms var(--ease) both; }
+.is-scan .gl-tchip:nth-of-type(3) { animation-delay: 80ms; }
+.is-scan .gl-tchip:nth-of-type(5) { animation-delay: 160ms; }
+.is-scan .gl-tchip:nth-of-type(7) { animation-delay: 240ms; }
+@keyframes tchip-slot {
+  0% { opacity: 0; transform: translateY(-12px) scale(0.96); }
+  100% { opacity: 1; transform: none; }
 }
+/* 疑问词当场溶解：提问方式被剥掉，只留概念 */
+.is-scan .gl-mark--qt,
+.is-split .gl-mark--qt {
+  animation: tmark-gone 520ms var(--ease) both;
+}
+@keyframes tmark-gone {
+  0% { opacity: 1; }
+  100% { opacity: 0.16; text-decoration-color: transparent; }
+}
+
+/* 拍二 · 拆解：你的词落下，并变成概念 */
+.is-split .gl-tchip__user { animation: tuser-drop 780ms var(--ease) both; }
+.is-split .gl-tchip--phen .gl-tchip__user { animation-delay: 150ms; }
+@keyframes tuser-drop {
+  0% { opacity: 0; transform: translateY(-64px); }
+  28% { opacity: 1; transform: translateY(-52px); }
+  64% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(0); }
+}
+.is-split .gl-tchip__node { animation: tnode-in 420ms var(--ease) both 500ms; }
+.is-split .gl-tchip--phen .gl-tchip__node { animation-delay: 650ms; }
+@keyframes tnode-in { from { opacity: 0; } to { opacity: 1; } }
+/* 进入后续拍后，已揭示的两端必须保持可见。
+   stage 类互斥，切拍会把上一拍的 animation 一起带走、回落到 opacity:0。 */
+.is-recombine .gl-tchip--start .gl-tchip__node,
+.is-recombine .gl-tchip--terminal .gl-tchip__node,
+.is-unfold .gl-tchip--start .gl-tchip__node,
+.is-unfold .gl-tchip--terminal .gl-tchip__node {
+  opacity: 1; animation: none; color: var(--ink);
+}
+
+/* 拍三 · 补链：补上你没说出口的环节，按因果顺序 */
+.is-recombine .gl-tchip--mid,
+.is-recombine .gl-tchip--star {
+  border-style: solid;
+  border-color: rgba(92, 225, 230, 0.32);
+  background: rgba(146, 180, 220, 0.07);
+}
+.is-recombine .gl-tchip--mid .gl-tchip__node,
+.is-recombine .gl-tchip--star .gl-tchip__node {
+  color: var(--ink); animation: tnode-in 460ms var(--ease) both;
+}
+.is-recombine .gl-tchip--mid .gl-tchip__node { animation-delay: 210ms; }
+/* 关键环节 = 全片情绪峰值：模糊凝聚登场 */
+.is-recombine .gl-tchip--star {
+  animation: tstar-condense 940ms var(--ease) both 440ms;
+}
+@keyframes tstar-condense {
+  0% { opacity: 0; filter: blur(9px); transform: scale(1.14); }
+  100% { opacity: 1; filter: blur(0); transform: scale(1); }
+}
+.is-recombine .gl-tchip--star .gl-tchip__node { animation-delay: 620ms; color: var(--cyan); }
+
+/* 连线：依次"推"出去 */
+.gl-tedge {
+  position: relative; height: 1px;
+  background: linear-gradient(90deg, rgba(92, 225, 230, 0.5), rgba(92, 225, 230, 0.24));
+  transform: scaleX(0); transform-origin: left center;
+}
+.gl-tedge::after {
+  content: ""; position: absolute; right: -1px; top: -2.5px;
+  width: 6px; height: 6px; border-radius: 50%;
+  border-top: 1px solid var(--cyan-line); border-right: 1px solid var(--cyan-line);
+  transform: rotate(45deg);
+}
+.is-recombine .gl-tedge { animation: tedge 520ms var(--ease) both; }
+.is-recombine .gl-tedge--1 { animation-delay: 60ms; }
+.is-recombine .gl-tedge--2 { animation-delay: 460ms; }
+.is-recombine .gl-tedge--3 { animation-delay: 860ms; }
+@keyframes tedge { to { transform: scaleX(1); } }
+
+/* 拍四 · 落定：整条链下沉交棒 */
+.gl-desk-zone.is-unfold .gl-trans {
+  animation: trans-out 420ms var(--ease) both;
+}
+@keyframes trans-out {
+  to { opacity: 0; transform: translateX(-50%) translateY(18px); }
+}
+
+/* 拍四 · 落定：把第三拍的成果焊住（切类会重播，这里显式静止） */
+.is-unfold .gl-tchip--mid,
+.is-unfold .gl-tchip--star {
+  border-style: solid;
+  border-color: rgba(92, 225, 230, 0.32);
+  background: rgba(146, 180, 220, 0.07);
+}
+.is-unfold .gl-tchip--mid .gl-tchip__node,
+.is-unfold .gl-tchip--star .gl-tchip__node { color: var(--ink); opacity: 1; animation: none; }
+.is-unfold .gl-tchip--star .gl-tchip__node { color: var(--cyan); }
+.is-unfold .gl-tedge { animation: none; transform: scaleX(1); }
+
+/* 跳过：转场期间随时可退 */
+.gl-trans__skip {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 12px; border-radius: var(--r-pill);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(146, 180, 220, 0.06);
+  color: var(--ink-dim); font-size: 11.5px;
+  pointer-events: auto; cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.gl-trans__skip:hover { color: var(--ink); border-color: rgba(92, 225, 230, 0.4); }
+.gl-trans__skip kbd {
+  font-family: var(--font-mono); font-size: 10px;
+  padding: 1px 5px; border-radius: 4px;
+  background: rgba(146, 180, 220, 0.1); color: var(--ink-faint);
+}
+
+/* 简化动效：不做位移，只保留"你的词 → 概念"的语义替换 */
+[data-motion="simple"] .gl-tchip__user { display: none; }
+[data-motion="simple"] .is-split .gl-tchip__node,
+[data-motion="simple"] .is-recombine .gl-tchip__node { animation: none; opacity: 1; }
+[data-motion="simple"] .gl-recombine .gl-tchip--star,
+[data-motion="simple"] .is-recombine .gl-tchip--star { animation: none; opacity: 1; filter: none; }
+[data-motion="simple"] .is-recombine .gl-tedge { animation: none; transform: scaleX(1); }
+[data-motion="simple"] .is-scan .gl-mark--qt { animation: none; opacity: 0.16; }
+[data-motion="simple"] .is-scan .gl-tchip { animation: none; opacity: 1; }
 
 /* 阶段说明 / 实时识别 */
 .gl-stage {
@@ -490,6 +701,12 @@ svg .dim { opacity: 0.15; transition: opacity 300ms var(--ease); }
   background: rgba(146, 180, 220, 0.065);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--r-md);
+  /* 现在是真正的 <button>（可聚焦、可用键盘触发上下游高亮、可被读屏识别），
+     所以清掉 UA 默认值，避免字体与对齐被悄悄换掉 */
+  appearance: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   box-shadow: var(--glass-inner-top), 0 12px 32px rgba(2, 6, 18, 0.4);
   cursor: grab; user-select: none; touch-action: none;
   /* 限制重绘范围：拖拽/发光只影响节点自身盒子 */
@@ -511,6 +728,13 @@ svg .dim { opacity: 0.15; transition: opacity 300ms var(--ease); }
 .gl-node--bypass { width: 160px; border-style: dashed; opacity: 0.7; cursor: default; }
 .gl-node.hover { box-shadow: var(--glass-inner-top), 0 0 32px rgba(92, 225, 230, 0.18); border-color: rgba(92, 225, 230, 0.5); }
 .gl-node.dim { opacity: 0.22; }
+
+/* 只给读屏用，不占布局 */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; border: 0;
+}
 .gl-node__idx {
   font-family: var(--font-mono); font-size: 10px;
   letter-spacing: 0.2em; color: var(--ink-faint);
@@ -621,8 +845,6 @@ svg .dim { opacity: 0.15; transition: opacity 300ms var(--ease); }
    动效简化模式（保留淡入与连线，去掉粒子/扫描/飞行/漂移）
    ============================================================ */
 [data-motion="simple"] .aurora__blob { animation: none; }
-[data-motion="simple"] .gl-scanline,
-[data-motion="simple"] .gl-fly { animation: none !important; opacity: 0 !important; }
 [data-motion="simple"] .gl-dot { display: none; }
 [data-motion="simple"] .gl-edge { animation: none; stroke-dashoffset: 0; }
 [data-motion="simple"] .gl-node--missing { animation: none; }
