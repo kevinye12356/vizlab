@@ -324,6 +324,10 @@ export default function GlassLab() {
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const shotRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const timers = useRef<number[]>([]);
+  /* 转场用：记下"你的词"在句子里的原始几何，以及编译台槽位的 DOM，
+     用来算出 token 的起点位移（否则它只会从槽位正上方落下） */
+  const userRects = useRef<{ condition?: DOMRect; phenomenon?: DOMRect }>({});
+  const chipRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   /* ---------- 动效开关：localStorage + prefers-reduced-motion ---------- */
   useEffect(() => {
@@ -386,8 +390,16 @@ export default function GlassLab() {
       if (!question) return;
       // compile(text, options) 预留接口：接入后端后此处改为 await fetch("/api/compile")
       deskRect.current = deskRef.current?.getBoundingClientRect() ?? null;
+      /* 在输入框还没变形之前，把两个词的原位置量下来 */
+      const grabMark = (cat: string) =>
+        mirrorRef.current?.querySelector<HTMLElement>(`.gl-mark--${cat}`)?.getBoundingClientRect() ??
+        undefined;
+      userRects.current = { condition: grabMark("cond"), phenomenon: grabMark("phen") };
       setCompiledQuestion(question);
-      setCompiledRec(rec);
+      /* 就地识别，不依赖防抖 300ms 后的 rec state ——
+         否则用户打完字立刻按编译时 compiledRec 还是 null，
+         转场里"你的词"就整个不见了。 */
+      setCompiledRec(analyze(question));
       setCompiledOpts(o);
       setPhase("compiling");
       setStage(1);
@@ -399,7 +411,7 @@ export default function GlassLab() {
         window.setTimeout(() => setPhase("result"), 2150), // 交棒给结果页
       ];
     },
-    [rec],
+    [],
   );
 
   /* 转场可跳过：Esc 或点「跳过」直接落到结果页 */
@@ -420,17 +432,61 @@ export default function GlassLab() {
 
   useEffect(() => () => timers.current.forEach((t) => window.clearTimeout(t)), []);
 
-  /* 调试钩子：?freeze=N 把转场冻结在第 N 拍（1–4），
-     便于静态核验每一拍的布局，不用跟 2.15s 的动画抢时间。 */
+  /* 调试钩子（只用于核验，不影响正常使用）：
+       ?freeze=1..4  把转场冻结在第 N 拍 —— 核验单拍布局
+       ?auto=1       用示例问题跑一次**真实编排**（走 startCompile 的定时器逐拍切类）
+       ?t=MS         把动画推进到 MS 毫秒后暂停 —— 配 freeze 看中间帧
+     有了这三个，headless --virtual-time-budget 才能真正按时间轴取样，
+     验证"动画是否真的在跑"，而不只是看静止的端点。 */
   useEffect(() => {
-    const n = Number(new URLSearchParams(window.location.search).get("freeze"));
-    if (!n || n < 1 || n > 4) return;
-    setText(EXAMPLE);
-    setCompiledQuestion(EXAMPLE);
-    setCompiledRec(analyze(EXAMPLE));
-    setPhase("compiling");
-    setStage(n as Stage);
+    const p = new URLSearchParams(window.location.search);
+    const n = Number(p.get("freeze"));
+    const auto = p.get("auto") === "1";
+    if (!auto && (!n || n < 1 || n > 4)) return;
+    deskRect.current = deskRef.current?.getBoundingClientRect() ?? null;
+    if (auto) {
+      /* 先把句子落到 text，等 mirror 层真的渲染出语义标记再触发编译 ——
+         否则测不到几何，token 只能用回退位移（这是脚手架问题，不是产品代码问题）。 */
+      setText(EXAMPLE);
+      window.setTimeout(() => startCompile(EXAMPLE, opts), 80);
+    } else {
+      setText(EXAMPLE);
+      setCompiledQuestion(EXAMPLE);
+      setCompiledRec(analyze(EXAMPLE));
+      setPhase("compiling");
+      setStage(n as Stage);
+    }
+    const t = Number(p.get("t") || 0);
+    if (t > 0) {
+      requestAnimationFrame(() => {
+        document.getAnimations().forEach((a) => {
+          try {
+            a.currentTime = t;
+            a.pause();
+          } catch {
+            /* 少数动画不可暂停，忽略 */
+          }
+        });
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* ---------- 转场：把 token 的起点定在句子里的原位 ----------
+     不测真实几何的话，token 只会从目标槽位正上方落下，
+     右端那个词就会凭空出现在画面另一侧，"从我的话里被拎出来"随即穿帮。 */
+  useLayoutEffect(() => {
+    if (phase !== "compiling" || stage < 2) return;
+    CHAIN.forEach((c, i) => {
+      if (!c.from) return;
+      const chip = chipRefs.current[i];
+      const src = userRects.current[c.from];
+      if (!chip || !src) return;
+      const cr = chip.getBoundingClientRect();
+      chip.style.setProperty("--fx", `${src.left + src.width / 2 - (cr.left + cr.width / 2)}px`);
+      chip.style.setProperty("--fy", `${src.top + src.height / 2 - (cr.top + cr.height / 2)}px`);
+    });
+  }, [phase, stage]);
 
   /* ---------- FLIP：输入台缩至顶部 ---------- */
   useLayoutEffect(() => {
@@ -965,7 +1021,14 @@ export default function GlassLab() {
                         ? compiledRec?.phenomenon
                         : undefined;
                   const chip = (
-                    <div key={`c${i}`} className={`gl-tchip gl-tchip--${c.kind}`} aria-hidden="true">
+                    <div
+                      key={`c${i}`}
+                      ref={(el) => {
+                        chipRefs.current[i] = el;
+                      }}
+                      className={`gl-tchip gl-tchip--${c.kind}`}
+                      aria-hidden="true"
+                    >
                       {userWord && <span className="gl-tchip__user">{userWord}</span>}
                       <span className="gl-tchip__node">{node.labels[1]}</span>
                     </div>

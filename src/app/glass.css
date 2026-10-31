@@ -394,7 +394,9 @@ button { font-family: inherit; cursor: pointer; }
   border-radius: var(--r-md);
   border: 1px dashed rgba(146, 180, 220, 0.26);
   background: rgba(146, 180, 220, 0.03);
-  overflow: hidden;
+  /* 不要 overflow:hidden —— 用户自己的词是从 translateY(-64px) 落下来的，
+     裁掉盒子外的部分就等于把这一拍的主体动作整个剪没了。 */
+  overflow: visible;
   transition: border-color 460ms var(--ease), background 460ms var(--ease);
 }
 .gl-tchip__node {
@@ -405,7 +407,8 @@ button { font-family: inherit; cursor: pointer; }
 .gl-tchip__user {
   position: absolute; inset: 0;
   display: grid; place-items: center;
-  font-size: 13px; font-weight: 500; letter-spacing: 0.02em;
+  /* 字号沿用正文字号，才能和输入框里的原词严丝合缝地对上 */
+  font-size: inherit; font-weight: 500; letter-spacing: 0.01em;
   opacity: 0; pointer-events: none;
 }
 .gl-tchip--cond .gl-tchip__user { color: var(--blue); }
@@ -429,17 +432,29 @@ button { font-family: inherit; cursor: pointer; }
 }
 @keyframes tmark-gone {
   0% { opacity: 1; }
-  100% { opacity: 0.16; text-decoration-color: transparent; }
+  /* 只淡到"被抽走"的程度，不能淡到读不出 —— 否则整句像文字坏了 */
+  100% { opacity: 0.3; text-decoration-color: transparent; }
+}
+/* 被拎走的两个词：原位留下淡痕，避免和飞行中的 token 重影 */
+.is-split .gl-mark--cond,
+.is-split .gl-mark--phen {
+  animation: tmark-lift 320ms var(--ease) both 60ms;
+}
+.is-split .gl-mark--phen { animation-delay: 210ms; }
+@keyframes tmark-lift {
+  to { opacity: 0.34; text-decoration-color: transparent; }
 }
 
 /* 拍二 · 拆解：你的词落下，并变成概念 */
 .is-split .gl-tchip__user { animation: tuser-drop 780ms var(--ease) both; }
 .is-split .gl-tchip--phen .gl-tchip__user { animation-delay: 150ms; }
 @keyframes tuser-drop {
-  0% { opacity: 0; transform: translateY(-64px); }
-  28% { opacity: 1; transform: translateY(-52px); }
-  64% { opacity: 1; transform: translateY(0); }
-  100% { opacity: 0; transform: translateY(0); }
+  /* --fx / --fy 由 JS 按真实几何算出：起点 = 这个词在句子里的原位置。
+     所以它看起来是"从我的句子里被拎起来"，而不是从槽位上方凭空落下。 */
+  0% { opacity: 0; transform: translate(var(--fx, 0px), var(--fy, -64px)); }
+  14% { opacity: 1; transform: translate(var(--fx, 0px), var(--fy, -64px)); }
+  68% { opacity: 1; transform: translate(0, 0); }
+  100% { opacity: 0; transform: translate(0, 0); }
 }
 .is-split .gl-tchip__node { animation: tnode-in 420ms var(--ease) both 500ms; }
 .is-split .gl-tchip--phen .gl-tchip__node { animation-delay: 650ms; }
@@ -537,7 +552,10 @@ button { font-family: inherit; cursor: pointer; }
 [data-motion="simple"] .gl-recombine .gl-tchip--star,
 [data-motion="simple"] .is-recombine .gl-tchip--star { animation: none; opacity: 1; filter: none; }
 [data-motion="simple"] .is-recombine .gl-tedge { animation: none; transform: scaleX(1); }
-[data-motion="simple"] .is-scan .gl-mark--qt { animation: none; opacity: 0.16; }
+[data-motion="simple"] .is-scan .gl-mark--qt { animation: none; opacity: 0.3; }
+/* 简化模式不放 token，所以句子里那两个词必须留着，否则就凭空没了 */
+[data-motion="simple"] .is-split .gl-mark--cond,
+[data-motion="simple"] .is-split .gl-mark--phen { animation: none; }
 [data-motion="simple"] .is-scan .gl-tchip { animation: none; opacity: 1; }
 
 /* 阶段说明 / 实时识别 */
