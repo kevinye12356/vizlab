@@ -107,13 +107,21 @@ interface GNode {
   bypass?: boolean;
 }
 interface GEdge {
-  from: string;
-  to: string;
+  from: string;  to: string;
   vertical?: boolean;
   dashed?: boolean;
   amber?: boolean;
   path?: string;
 }
+interface DragState {
+  id: string;
+  dx: number;
+  dy: number;
+  active: boolean;
+}
+/* 拖动时相连节点的阻尼牵引系数：被拖的走满，直接相连的跟一点，
+   整条链看起来是"被拎起来"的，而不是每个方块各自脱开。 */
+const DRAG_DAMP = 0.18;
 
 const NODE_W = 200;
 const NODE_H = 84;
@@ -297,6 +305,8 @@ interface CompileView {
   gh: number;
   /** 原始领域模型：观众预演接口需要它原样回传 */
   raw: { graph: ConceptGraph; storyboard: Storyboard };
+  /** 交付画幅规格（「完整方案」才展示） */
+  spec?: { aspect: string; resolution: string; fps: number };
 }
 
 const ROW_STEP = 328; // 内置示例（8 节点）使用的行距
@@ -324,11 +334,16 @@ let DEBUG_SLOW = 0;
  * 画布宽高由实际占位推导（而不是写死 1160×500），
  * 这样 5~6 个节点的真实结果不会有半屏空白。
  */
-function layoutOf(count: number): Layout {
-  if (count <= 0) return { w: GRAPH_W, h: 200, pos: [] };
+function layoutOf(count: number, avail: number): Layout {
+  if (count <= 0) return { w: Math.min(avail, GRAPH_W), h: 200, pos: [] };
   const rows = Math.max(1, Math.ceil(count / 4));
   const cols = Math.ceil(count / rows);
-  const gapX = cols > 1 ? Math.min(GAP_X_MAX, (GRAPH_W - cols * NODE_W) / (cols - 1)) : 0;
+  /* 列距在 20~150 之间按可用宽度收紧：窄容器里如果还保留 150px 列距，
+     最右一列会被 overflow 裁掉。 */
+  const gapX =
+    cols > 1
+      ? Math.max(20, Math.min(GAP_X_MAX, (avail - PAD * 2 - cols * NODE_W) / (cols - 1)))
+      : 0;
   const gapY = rows > 1 ? GAP_Y : 0;
   const innerW = cols * NODE_W + (cols - 1) * gapX;
   const innerH = rows * NODE_H + (rows - 1) * gapY;
@@ -420,13 +435,22 @@ function buildRealTemplate(g: ConceptGraph, sb: Storyboard): string {
 }
 
 function adaptCompile(r: CompileOk): CompileView {
-  const lay = layoutOf(r.graph.nodes.length);
+  /* 坐标只是一份按默认宽度排的初值 —— 真正的位置取决于容器可用宽度，
+     由组件按视口重算（见 graphNodes），否则窄窗口里最右一列会被裁掉。 */
+  const lay = layoutOf(r.graph.nodes.length, GRAPH_W);
   const nodes = toNodes(r.graph, lay);
   return {
     nodes,
     gw: lay.w,
     gh: lay.h,
     raw: { graph: r.graph, storyboard: r.storyboard },
+    spec: r.handoff?.outputSpec
+      ? {
+          aspect: r.handoff.outputSpec.aspect,
+          resolution: r.handoff.outputSpec.resolution,
+          fps: r.handoff.outputSpec.fps,
+        }
+      : undefined,
     edges: toEdges(r.graph, nodes),
     shots: toShots(r.storyboard),
     chain: toChain(nodes),
@@ -445,33 +469,47 @@ function nodeById(nodes: GNode[], id: string): GNode | undefined {
   return nodes.find((n) => n.id === id);
 }
 
-function edgePath(e: GEdge, nodes: GNode[]): string {
+function edgePath(e: GEdge, nodes: GNode[], drag?: DragState | null): string {
   if (e.path) return e.path;
   const a = nodeById(nodes, e.from);
   const b = nodeById(nodes, e.to);
   if (!a || !b) return "";
-  const ay = a.y + NODE_H / 2;
-  const by = b.y + NODE_H / 2;
+  /* 位移场：被拖的节点走满位移，同一条边的另一端按阻尼跟随。
+     连线和方块用同一套偏移，整条因果链才是"连在一起被拉动"。 */
+  const delta = (id: string) => {
+    if (!drag?.active) return { x: 0, y: 0 };
+    if (id === drag.id) return { x: drag.dx, y: drag.dy };
+    const touches = e.from === drag.id || e.to === drag.id;
+    return touches ? { x: drag.dx * DRAG_DAMP, y: drag.dy * DRAG_DAMP } : { x: 0, y: 0 };
+  };
+  const da = delta(a.id);
+  const db = delta(b.id);
+  const ax = a.x + da.x;
+  const bx = b.x + db.x;
+  const ay = a.y + da.y + NODE_H / 2;
+  const by = b.y + db.y + NODE_H / 2;
   if (e.vertical) {
-    const x1 = a.x + NODE_W;
-    const x2 = b.x + NODE_W;
+    const x1 = ax + NODE_W;
+    const x2 = bx + NODE_W;
     return `M ${x1} ${ay} C ${x1 + 60} ${ay}, ${x2 + 60} ${by}, ${x2} ${by}`;
   }
   // 跨行且同列。真实概念图（模型生成，可能是分支而非单链）里这种边
   // 会落在任意一列，向左/右绕弧线就会横穿整张图面，所以直接竖直连下去。
-  if (Math.abs(a.x - b.x) < 1) {
-    const x = a.x + NODE_W / 2;
-    return `M ${x} ${a.y + NODE_H} L ${x} ${b.y}`;
+  if (Math.abs(ax - bx) < 1) {
+    const x = ax + NODE_W / 2;
+    const top = a.y + da.y + NODE_H;
+    const bottom = b.y + db.y;
+    return `M ${x} ${top} L ${x} ${bottom}`;
   }
-  if (b.x > a.x) {
-    const x1 = a.x + NODE_W;
-    const x2 = b.x;
+  if (bx > ax) {
+    const x1 = ax + NODE_W;
+    const x2 = bx;
     const mx = (x1 + x2) / 2;
     return `M ${x1} ${ay} C ${mx} ${ay}, ${mx} ${by}, ${x2} ${by}`;
   }
   // 奇数行内部是从右往左，线要从左边出去接右边
-  const x1 = a.x;
-  const x2 = b.x + NODE_W;
+  const x1 = ax;
+  const x2 = bx + NODE_W;
   const mx = (x1 + x2) / 2;
   return `M ${x1} ${ay} C ${mx} ${ay}, ${mx} ${by}, ${x2} ${by}`;
 }
@@ -584,7 +622,7 @@ export default function GlassLab() {
   const [abstraction, setAbstraction] = useState<Abstraction>(1);
   const [absFade, setAbsFade] = useState(false);
   const [hover, setHover] = useState<string | null>(null);
-  const [drag, setDrag] = useState<{ id: string; dx: number; dy: number; active: boolean } | null>(null);
+  const [drag, setDrag] = useState<DragState | null>(null);
   const [activeShot, setActiveShot] = useState(4);
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
@@ -690,6 +728,9 @@ export default function GlassLab() {
      失败不影响结果页 —— 它只是附加的一次质检。 */
   useEffect(() => {
     if (phase !== "result" || !compiled) return;
+    /* 只有「完整方案」才跑观众预演 —— 它要额外一次模型调用（约 2.3s），
+       别的产出模式下没必要花这个时间。 */
+    if (compiledOpts.output !== "完整方案") return;
     const id = ++audIdRef.current;
     setAudience(null);
     setAudErr(null);
@@ -718,7 +759,7 @@ export default function GlassLab() {
         if (id === audIdRef.current) setAudPending(false);
       }
     })();
-  }, [phase, compiled]);
+  }, [phase, compiled, compiledOpts.output]);
 
   /* 核验用：?to=<id> 在观众预演数据到位后把该区块滚进视口。
      headless 截图只能拍视口，不滚就永远验不到下半页。 */
@@ -727,6 +768,22 @@ export default function GlassLab() {
     const to = new URLSearchParams(window.location.search).get("to");
     if (to) document.getElementById(to)?.scrollIntoView({ block: "start" });
   }, [audience]);
+
+  /* 核验用：?drag=<节点序号>&dx=&dy= 冻结一个"正在拖动"的状态。
+     拖拽是动态行为，不这样固定住就没法用静态截图检查连线是否跟随。 */
+  useEffect(() => {
+    if (!compiled) return;
+    const p = new URLSearchParams(window.location.search);
+    if (p.get("drag") === null) return;
+    const n = compiled.nodes[Number(p.get("drag"))];
+    if (!n) return;
+    setDrag({
+      id: n.id,
+      dx: Number(p.get("dx") ?? 130),
+      dy: Number(p.get("dy") ?? 80),
+      active: true,
+    });
+  }, [compiled]);
 
   /* 结果页 / 转场的数据源：真实编译产物优先。
      未编译时（首屏）回落到内置示例 —— 首屏本来就不显示这些内容，
@@ -737,9 +794,76 @@ export default function GlassLab() {
   const chain = compiled?.chain ?? CHAIN;
   const totalSec = compiled?.totalSec ?? 38;
   /* 概念图画布尺寸：真实数据随节点数收紧；内置示例沿用原设计稿尺寸 */
-  const graphW = compiled?.gw ?? GRAPH_W;
-  const graphH = compiled?.gh ?? GRAPH_H;
-  /* 观众预演派生量。shotIndex 是 0-based（后端 Shot.index 口径），显示时 +1 */
+  /* 概念图可布局宽度：随视口变化重算坐标。
+     节点是绝对定位的 px，若仍按 1160 排，窄窗口里最右一列会被 overflow 裁掉。 */
+  const [avail, setAvail] = useState(GRAPH_W);
+  useEffect(() => {
+    const upd = () => setAvail(Math.max(560, Math.min(GRAPH_W, window.innerWidth - 88)));
+    upd();
+    window.addEventListener("resize", upd);
+    return () => window.removeEventListener("resize", upd);
+  }, []);
+  const lay = useMemo(
+    () => layoutOf(compiled ? compiled.nodes.length : 0, avail),
+    [compiled, avail],
+  );
+  const graphNodes = useMemo(
+    () =>
+      compiled
+        ? compiled.nodes.map((n, i) => ({ ...n, x: lay.pos[i].x, y: lay.pos[i].y }))
+        : NODES,
+    [compiled, lay],
+  );
+  const graphW = compiled ? lay.w : GRAPH_W;
+  const graphH = compiled ? lay.h : GRAPH_H;
+  /* 「产出」选项必须真的有区别 —— 之前三个选项渲染完全相同，
+     等于骗用户（空控件比没有控件更糟）。
+       仅提示词      只有提示词
+       分镜 + 提示词  概念图 + 分镜 + 提示词（默认）
+       完整方案      再加观众预演与交付规格 */
+  const outMode = compiledOpts.output;
+  const showGraph = outMode !== "仅提示词";
+  const showShots = outMode !== "仅提示词";
+  const showAudience = outMode === "完整方案";
+  const showSpec = outMode === "完整方案";
+  /* 观众预演派生量。shotIndex 是 0-based（后端 Shot.index 口径），显示时 +1 */  /* 节点位移场，与 edgePath 内部保持一致：
+     被拖的节点走满位移，与它直接相连的节点按阻尼牵引 —— 这样拖动时
+     是"整条因果链被拎起来"，而不是一个方块孤零零地滑出去。 */
+  const nodeOffset = useCallback(
+    (id: string) => {
+      if (!drag?.active) return { x: 0, y: 0 };
+      if (id === drag.id) return { x: drag.dx, y: drag.dy };
+      const linked = edges.some(
+        (e) => (e.from === drag.id && e.to === id) || (e.to === drag.id && e.from === id),
+      );
+      return linked ? { x: drag.dx * DRAG_DAMP, y: drag.dy * DRAG_DAMP } : { x: 0, y: 0 };
+    },
+    [drag, edges],
+  );
+
+  /* 核验用：?dbg=1 把概念图的实测几何打印到页面上。
+     截图缩放后读不出小字，只能让页面自己报数。 */
+  const [dbgTxt, setDbgTxt] = useState("");
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get("dbg") !== "1") return;
+    const t = window.setTimeout(() => {
+      const box = document.querySelector(".gl-graph");
+      const r = box?.getBoundingClientRect();
+      const first = document.querySelector(".gl-node");
+      const fr = first?.getBoundingClientRect();
+      const cs = first ? window.getComputedStyle(first) : null;
+      setDbgTxt(
+        `dbg · vp ${window.innerWidth} · mq960=${window.matchMedia("(max-width: 960px)").matches}` +
+          ` · graph ${Math.round(r?.width ?? 0)}x${Math.round(r?.height ?? 0)}` +
+          ` · node1 pos=${cs?.position} left=${cs?.left} top=${cs?.top}` +
+          ` · nodeBox ${Math.round(fr?.width ?? 0)}x${Math.round(fr?.height ?? 0)}` +
+          ` · vars ${graphW}x${graphH} · n=${nodes.length}`,
+      );
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [compiled, graphW, graphH, nodes.length]);
+
   const audAvg =
     audience && audience.probes.length
       ? Math.round(audience.probes.reduce((s, p) => s + p.comprehension, 0) / audience.probes.length)
@@ -916,10 +1040,14 @@ export default function GlassLab() {
     if (auto) {
       /* 先把句子落到 text，等 mirror 层真的渲染出语义标记再触发编译 ——
          否则测不到几何，token 只能用回退位移（这是脚手架问题，不是产品代码问题）。
-         ?q=... 可指定问题，用来核验"不同问题得到不同结果"。 */
+         ?q=... 可指定问题，用来核验"不同问题得到不同结果"。
+         ?output= / ?dur= 覆盖产出与时长选项（headless 里点选项条很麻烦）。 */
       const q = p.get("q") || EXAMPLE;
+      const o = { ...opts };
+      if (p.get("output")) o.output = p.get("output") as string;
+      if (p.get("dur")) o.duration = p.get("dur") as string;
       setText(q);
-      window.setTimeout(() => startCompile(q, opts), 80);
+      window.setTimeout(() => startCompile(q, o), 80);
     } else {
       setText(EXAMPLE);
       setCompiledQuestion(EXAMPLE);
@@ -1315,11 +1443,14 @@ export default function GlassLab() {
               重新提问
             </button>
             <span className="gl-topbar__text">{compiledQuestion}</span>
+            <span className="gl-topbar__mode">
+              {compiledOpts.output} · {compiledOpts.duration}
+            </span>
           </div>
 
           <main className="gl-result">
             {/* 概念图 */}
-            <section className="reveal" style={d(60)}>
+            <section className={`reveal${showGraph ? "" : " is-hidden"}`} style={d(60)}>
               <div className="gl-section-head">
                 <div>
                   <h2>
@@ -1352,6 +1483,11 @@ export default function GlassLab() {
                 </div>
               </div>
 
+              {dbgTxt && (
+                <p className="gl-sub" style={{ color: "var(--amber)", marginBottom: 10 }}>
+                  {dbgTxt}
+                </p>
+              )}
               <div
                 className={`glass gl-graph${absFade ? " is-fading" : ""}`}
                 /* 用 CSS 变量而非内联 width/height：媒体查询里的
@@ -1364,14 +1500,17 @@ export default function GlassLab() {
                   aria-hidden="true"
                 >
                   {edges.map((e, i) => {
-                    const dpath = edgePath(e, nodes);
+                    /* 与拖动节点直接相连的边：实时重算路径 + 提亮，
+                       拖动时"链"是连着的，不是方块脱开 */
+                    const live = !!drag?.active && (e.from === drag.id || e.to === drag.id);
+                    const dpath = edgePath(e, graphNodes, drag);
                     const dim = edgeDim(e);
                     return (
-                      <g key={`${e.from}-${e.to}`} className={dim ? "dim" : ""}>
+                      <g key={`${e.from}-${e.to}`} className={dim && !live ? "dim" : ""}>
                         <path
                           d={dpath}
                           pathLength={1}
-                          className={`gl-edge${e.dashed ? " gl-edge--dashed" : ""}${e.amber ? " gl-edge--amber" : ""}`}
+                          className={`gl-edge${e.dashed ? " gl-edge--dashed" : ""}${e.amber ? " gl-edge--amber" : ""}${live ? " is-live" : ""}`}
                           style={d(i * 90)}
                         />
                         {motion === "full" && !e.dashed && !dim && (
@@ -1384,7 +1523,7 @@ export default function GlassLab() {
                   })}
                 </svg>
 
-                {nodes.map((n, i) => {
+                {graphNodes.map((n, i) => {
                   /* 上下游关系：原先只有 hover 才可见，读屏与键盘用户永远拿不到。
                      改成 <button> + aria-describedby 后，聚焦即可获得同样的信息。 */
                   const ups = edges
@@ -1417,15 +1556,20 @@ export default function GlassLab() {
                       ]
                         .filter(Boolean)
                         .join(" ")}
-                      style={{
-                        left: n.x,
-                        top: n.y,
-                        width: n.bypass ? 160 : NODE_W,
-                        transform:
-                          drag?.id === n.id
-                            ? `translate(${drag.dx}px, ${drag.dy}px) scale(1.04)`
+                      style={(() => {
+                        const off = nodeOffset(n.id);
+                        const lifted = !!drag?.active && drag.id === n.id;
+                        const moving = off.x !== 0 || off.y !== 0;
+                        return {
+                          left: n.x,
+                          top: n.y,
+                          width: n.bypass ? 160 : NODE_W,
+                          transform: moving
+                            ? `translate(${off.x}px, ${off.y}px)${lifted ? " scale(1.04)" : ""}`
                             : undefined,
-                      }}
+                          zIndex: lifted ? 6 : undefined,
+                        };
+                      })()}
                       onPointerDown={(e) => onNodeDown(e, n.id)}
                       onPointerEnter={() => !n.bypass && setHover(n.id)}
                       onPointerLeave={() => setHover(null)}
@@ -1451,7 +1595,7 @@ export default function GlassLab() {
             </section>
 
             {/* 分镜 + 时间轴 */}
-            <section className="reveal" style={d(120)}>
+            <section className={`reveal${showShots ? "" : " is-hidden"}`} style={d(120)}>
               <div className="gl-section-head">
                 <div>
                   <h2>
@@ -1495,8 +1639,12 @@ export default function GlassLab() {
               </div>
             </section>
 
-            {/* 观众预演 · 理解度曲线 */}
-            <section className="reveal" id="audience" style={d(150)}>
+            {/* 观众预演 · 理解度曲线（仅「完整方案」） */}
+            <section
+              className={`reveal${showAudience ? "" : " is-hidden"}`}
+              id="audience"
+              style={d(150)}
+            >
               <div className="gl-section-head">
                 <div>
                   <h2>
@@ -1631,8 +1779,37 @@ export default function GlassLab() {
                   <h2>
                     可执行提示词 · <b>整段复制即用</b>
                   </h2>
-                  <p className="gl-sub">变量以冷青高亮 · 复制时自动替换为本次编译的实际值</p>
+                  <p className="gl-sub">
+                    变量以冷青高亮 · 复制时自动替换为本次编译的实际值
+                    {compiled && totalSec !== Number(compiledOpts.duration.replace(/[^0-9]/g, "")) && (
+                      <>
+                        {" "}
+                        · 目标 {compiledOpts.duration}，受旁白语速约束实际收在 <b>{totalSec}s</b>
+                      </>
+                    )}
+                  </p>
                 </div>
+                {showSpec && compiled?.spec && (
+                  <div className="gl-spec">
+                    <span>
+                      <b>{compiled.spec.aspect}</b> 画幅
+                    </span>
+                    <span>
+                      <b>{compiled.spec.resolution}</b>
+                    </span>
+                    <span>
+                      <b>{compiled.spec.fps}</b> fps
+                    </span>
+                    <span>
+                      <b>{totalSec}</b> s 总时长
+                    </span>
+                    {compiled.auditScore != null && (
+                      <span>
+                        一致性 <b>{compiled.auditScore}</b>
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="gl-codeblock">
                 <div className="gl-code__bar">

@@ -783,6 +783,22 @@ button { font-family: inherit; cursor: pointer; }
   color: var(--ink-dim); font-size: 14px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* 当前产出模式回显：让「产出」「时长」这类选项的生效结果一眼可见，
+   否则用户改完选项会以为没起作用 */
+.gl-topbar__mode {
+  flex-shrink: 0; white-space: nowrap;
+  font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint);
+}
+
+/* 产出模式切换：按「产出」隐藏对应区块（不能只改文案不改内容） */
+.reveal.is-hidden { display: none; }
+
+/* 交付规格（仅「完整方案」） */
+.gl-spec {
+  display: flex; gap: 16px; flex-wrap: wrap;
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-faint);
+}
+.gl-spec b { color: var(--cyan); font-weight: 500; }
 /* 返回提问：结果页里最高频的下一步动作，必须一眼看到 */
 .gl-back {
   flex-shrink: 0; display: flex; align-items: center; gap: 7px;
@@ -831,6 +847,16 @@ button { font-family: inherit; cursor: pointer; }
   stroke-dasharray: 1; stroke-dashoffset: 1;
   animation: gl-draw 900ms var(--ease) forwards;
   animation-delay: var(--d, 0ms);
+  /* 拖动结束后，连线与方块同用一条 700ms 弹簧曲线归位 ——
+     d 的插值要求路径命令结构一致，这里四条分支都是
+     M + 一到两段 C/L，所以能平滑回弹。 */
+  transition: d 700ms var(--ease-spring);
+}
+/* 拖动进行中：禁止插值（否则线会软绵绵地追不上手指），并提亮加粗 */
+.gl-edge.is-live {
+  transition: none;
+  stroke: var(--cyan);
+  stroke-width: 2.2;
 }
 .gl-edge--dashed {
   stroke: rgba(232, 238, 247, 0.28);
@@ -1047,7 +1073,13 @@ svg .dim { opacity: 0.15; transition: opacity 300ms var(--ease); }
 /* ============================================================
    响应式
    ============================================================ */
-@media (max-width: 1240px) {
+/* 概念图降级为竖向列表的断点。
+   原先卡在 1240px（跟结果页 max-width 同值），意味着绝大多数笔记本
+   ——1280 窗口去边框约 1184——都会掉进这个分支：连线 SVG 被 display:none、
+   拖拽被 cursor:default 判定为不可用、节点撑成 100% 宽。用户看到的
+   「因果链没有动效、拖拽只是单纯拖出来、留白太多」全部来自这里。
+   真正放不下（4×200 + 3×20 + 56 ≈ 916）才该降级。 */
+@media (max-width: 1024px) {
   .gl-graph {
     width: 100%; height: auto;
     display: flex; flex-direction: column; gap: 26px; padding: 24px;
