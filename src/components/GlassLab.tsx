@@ -19,11 +19,18 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+import type {
+  AuditReport,
+  ConceptGraph,
+  Coverage,
+  HandoffManifest,
+  Storyboard,
+} from "@/lib/types";
 
 /* ================= 类型 ================= */
 
 type MotionMode = "full" | "simple";
-type Phase = "landing" | "compiling" | "result";
+type Phase = "landing" | "compiling" | "result" | "error";
 type Abstraction = 0 | 1 | 2;
 type Mark = "qt" | "cond" | "phen";
 type Stage = 0 | 1 | 2 | 3 | 4;
@@ -80,10 +87,12 @@ const GROUPS: Array<{
   { key: "output", label: "产出", options: ["分镜 + 提示词", "仅提示词", "完整方案"] },
 ];
 
+/* 三档抽象的说明。不能写具体的学科语境 —— 编译对象可能是植物学、
+   大气光学或生理学，写死"身体里的…"放到叶子上就不对了。 */
 const ABS: Array<{ name: string; hint: string }> = [
-  { name: "具体", hint: "孩子也能懂的比喻" },
-  { name: "机制", hint: "身体里的因果链条" },
-  { name: "原理", hint: "生理学层面的解释" },
+  { name: "具体", hint: "最直白的一句话，不出现术语" },
+  { name: "机制", hint: "概念之间谁导致谁" },
+  { name: "原理", hint: "学科视角下的定义与机制" },
 ];
 
 interface GNode {
@@ -154,7 +163,7 @@ const SHOTS: Shot[] = [
 
 // 编译转场用的四槽链：两端是"用户自己的词"，中间是产品补出来的环节。
 // 取真实 NODES 的机制档文案，第 3 槽用 missing 节点（全片情绪峰值）。
-const CHAIN: Array<{ id: string; kind: string; from?: "condition" | "phenomenon" }> = [
+const CHAIN: ChainItem[] = [
   { id: "n1", kind: "start", from: "condition" },
   { id: "n2", kind: "mid" },
   { id: "n5", kind: "star" },
@@ -237,30 +246,208 @@ function segmentText(text: string): Seg[] {
   return out;
 }
 
-/* ================= 概念图几何 ================= */
+/* ================= 真实编译结果 → 视图模型 =================
+   后端 /api/compile 返回的是领域模型（ConceptGraph / Storyboard），
+   与画布需要的视图模型（坐标、三档抽象、短标签）不同。
+   这一层只做映射，不造内容：所有文案都取自后端已有字段。
 
-function nodeById(id: string): GNode {
-  return NODES.find((n) => n.id === id)!;
+   三档抽象直接落在后端既有字段上，不另写文案：
+     具体 = onScreen（3~8 字，最口语）／机制 = name／原理 = definition
+   后端还为每个概念给出 sourceQuote（原句出处），下一轮用于节点溯源展示。 */
+
+interface CompileOk {
+  ok: true;
+  graph: ConceptGraph;
+  storyboard: Storyboard;
+  audit: AuditReport;
+  engine: string;
+  model?: string;
+  handoff?: HandoffManifest;
+}
+/** 422：NOT_COVERED（未收录）/ MODEL_FAILED（模型失败）——必须诚实呈现，不许编造 */
+interface CompileErr {
+  ok: false;
+  code: string;
+  message: string;
+  suggestions?: string[];
+}
+type CompileResponse = CompileOk | CompileErr;
+
+type ChainKind = "start" | "mid" | "star" | "terminal";
+interface ChainItem {
+  id: string;
+  kind: ChainKind;
+  from?: "condition" | "phenomenon";
 }
 
-function edgePath(e: GEdge): string {
+interface CompileView {
+  nodes: GNode[];
+  edges: GEdge[];
+  shots: Shot[];
+  chain: ChainItem[];
+  prompt: string;
+  thesis: string;
+  discipline: string;
+  totalSec: number;
+  coverage: Coverage;
+  auditScore?: number;
+}
+
+const ROW_STEP = 328; // 与原设计稿行距一致（24 → 352）
+
+/* 核验用（由 ?slow= / ?api= 注入，正常使用下就是默认值）：
+   slow 让请求人为延后，用来观察「推演中」等待态；
+   api  换成坏路径，用来观察失败态。headless 抓不到"网络 pending 中"的帧，
+   所以只能这样把等待窗口拉开。 */
+let DEBUG_API = "/api/compile";
+let DEBUG_SLOW = 0;
+
+/**
+ * 在 1160×500 画布内做 serpentine 布局。
+ * 行数由「每行最多 4 个」推导，奇数行反向 —— 这样折返边永远落在同一列，
+ * 垂直弧线不会被拉斜。整体再垂直居中，避免少量节点时全部挤在顶部。
+ */
+function layoutOf(count: number): Array<{ x: number; y: number }> {
+  if (count <= 0) return [];
+  const rows = Math.max(1, Math.ceil(count / 4));
+  const cols = Math.ceil(count / rows);
+  const stepX = cols > 1 ? (GRAPH_W - NODE_W) / (cols - 1) : 0;
+  const contentH = (rows - 1) * ROW_STEP + NODE_H;
+  const y0 = Math.round((GRAPH_H - contentH) / 2);
+  return Array.from({ length: count }, (_, i) => {
+    const r = Math.floor(i / cols);
+    const k = i % cols;
+    const c = r % 2 === 0 ? k : cols - 1 - k;
+    return { x: Math.round(c * stepX), y: y0 + r * ROW_STEP };
+  });
+}
+
+function toNodes(g: ConceptGraph): GNode[] {
+  const pos = layoutOf(g.nodes.length);
+  // 「缺失环节」= 链条中段那个概念。它承担转场里的情绪峰值，位置由长度推导
+  const mid = g.nodes.length >= 3 ? Math.floor((g.nodes.length - 1) / 2) : -1;
+  return g.nodes.map((n, i) => ({
+    id: n.id,
+    labels: [n.onScreen, n.name, n.definition],
+    x: pos[i].x,
+    y: pos[i].y,
+    start: i === 0,
+    terminal: i === g.nodes.length - 1,
+    missing: i === mid,
+  }));
+}
+
+function toEdges(g: ConceptGraph, nodes: GNode[]): GEdge[] {
+  const idx = new Map(nodes.map((n, i) => [n.id, i]));
+  const last = nodes.length - 1;
+  return g.edges
+    .filter((e) => idx.has(e.from) && idx.has(e.to))
+    .map((e) => ({
+      from: e.from,
+      to: e.to,
+      // 反差/反噬不是主因果链，走虚线
+      dashed: e.relation === "contrasts" || e.relation === "feedback",
+      amber: idx.get(e.to) === last,
+    }));
+}
+
+function toShots(sb: Storyboard): Shot[] {
+  const last = sb.shots.length - 1;
+  const key = Math.floor(last / 2);
+  return sb.shots.map((s, i) => ({
+    no: String(i + 1).padStart(2, "0"),
+    // 叙事功能（beat）冒号前的那半句就是这类分镜的短标签
+    type: (s.beat.split(/[:：]/)[0] || "分镜").slice(0, 6),
+    dur: Math.round(s.durationSec),
+    text: s.narration || s.visual,
+    tone: i === last ? "amber" : i === key ? "cyan" : undefined,
+  }));
+}
+
+/** 转场四槽用的链条：首槽/末槽是「你的词」，中间是产品补出来的环节。最多 5 槽。 */
+function toChain(nodes: GNode[]): ChainItem[] {
+  const n = nodes.length;
+  if (!n) return [];
+  const MAX = 5;
+  const idx =
+    n <= MAX
+      ? nodes.map((_, i) => i)
+      : Array.from({ length: MAX }, (_, k) => Math.round((k * (n - 1)) / (MAX - 1)));
+  const uniq = [...new Set(idx)];
+  return uniq.map((i, k) => ({
+    id: nodes[i].id,
+    kind:
+      k === 0 ? "start" : k === uniq.length - 1 ? "terminal" : nodes[i].missing ? "star" : "mid",
+    from: k === 0 ? "condition" : k === uniq.length - 1 ? "phenomenon" : undefined,
+  }));
+}
+
+/** 提示词由本次真实因果链生成；保留 ${变量} 字面供高亮与复制时替换 */
+function buildRealTemplate(g: ConceptGraph, sb: Storyboard): string {
+  const chain = g.nodes.map((n) => n.name).join(" → ");
+  return `你是科普视频导演。请为主题「${g.question}」制作一支 \${时长} 的\${受众}向科普短视频。
+
+【论点】${g.thesis}
+【学科】${g.discipline}
+【现象】\${现象}
+【条件】\${条件}
+【核心机制】${chain}
+【抽象层级】\${抽象层级}
+【分镜】共 ${sb.shots.length} 镜 / 总时长 ${sb.totalSec}s；每镜标注 景别 · 时长 · 画面 · 旁白
+【输出 JSON】{ title, hooks: [${sb.shots.length} items], shots: [{ no, scene, duration, visual }] }`;
+}
+
+function adaptCompile(r: CompileOk): CompileView {
+  const nodes = toNodes(r.graph);
+  return {
+    nodes,
+    edges: toEdges(r.graph, nodes),
+    shots: toShots(r.storyboard),
+    chain: toChain(nodes),
+    prompt: buildRealTemplate(r.graph, r.storyboard),
+    thesis: r.graph.thesis,
+    discipline: r.graph.discipline,
+    totalSec: r.storyboard.totalSec,
+    coverage: r.graph.coverage,
+    auditScore: r.audit?.score,
+  };
+}
+
+/* ================= 概念图几何 ================= */
+
+function nodeById(nodes: GNode[], id: string): GNode | undefined {
+  return nodes.find((n) => n.id === id);
+}
+
+function edgePath(e: GEdge, nodes: GNode[]): string {
   if (e.path) return e.path;
-  const a = nodeById(e.from);
-  const b = nodeById(e.to);
+  const a = nodeById(nodes, e.from);
+  const b = nodeById(nodes, e.to);
+  if (!a || !b) return "";
+  const ay = a.y + NODE_H / 2;
+  const by = b.y + NODE_H / 2;
   if (e.vertical) {
     const x1 = a.x + NODE_W;
-    const y1 = a.y + NODE_H / 2;
     const x2 = b.x + NODE_W;
-    const y2 = b.y + NODE_H / 2;
-    const my = (y1 + y2) / 2;
-    return `M ${x1} ${y1} C ${x1 + 60} ${y1}, ${x2 + 60} ${y2}, ${x2} ${y2}`;
+    return `M ${x1} ${ay} C ${x1 + 60} ${ay}, ${x2 + 60} ${by}, ${x2} ${by}`;
   }
-  const x1 = a.x + NODE_W;
-  const y1 = a.y + NODE_H / 2;
-  const x2 = b.x;
-  const y2 = b.y + NODE_H / 2;
+  // 跨行且同列。真实概念图（模型生成，可能是分支而非单链）里这种边
+  // 会落在任意一列，向左/右绕弧线就会横穿整张图面，所以直接竖直连下去。
+  if (Math.abs(a.x - b.x) < 1) {
+    const x = a.x + NODE_W / 2;
+    return `M ${x} ${a.y + NODE_H} L ${x} ${b.y}`;
+  }
+  if (b.x > a.x) {
+    const x1 = a.x + NODE_W;
+    const x2 = b.x;
+    const mx = (x1 + x2) / 2;
+    return `M ${x1} ${ay} C ${mx} ${ay}, ${mx} ${by}, ${x2} ${by}`;
+  }
+  // 奇数行内部是从右往左，线要从左边出去接右边
+  const x1 = a.x;
+  const x2 = b.x + NODE_W;
   const mx = (x1 + x2) / 2;
-  return `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`;
+  return `M ${x1} ${ay} C ${mx} ${ay}, ${mx} ${by}, ${x2} ${by}`;
 }
 
 /* ================= 提示词模板 ================= */
@@ -326,6 +513,13 @@ export default function GlassLab() {
   const [compiledQuestion, setCompiledQuestion] = useState(EXAMPLE);
   const [compiledRec, setCompiledRec] = useState<Recognition | null>(null);
   const [compiledOpts, setCompiledOpts] = useState<CompileOptions>(opts);
+  /* 真实编译产物。为 null 时结果页回落到内置示例（离线段/调试用） */
+  const [compiled, setCompiled] = useState<CompileView | null>(null);
+  const [compileErr, setCompileErr] = useState<CompileErr | null>(null);
+  /* 请求在飞。转场第三拍会一直等它 —— 那几秒就是"AI 在补因果链" */
+  const [pending, setPending] = useState(false);
+  /* 拍二已演完、模型还没回：页脚改说「推演中」，别让用户对着空槽干等 */
+  const [waiting, setWaiting] = useState(false);
 
   const [abstraction, setAbstraction] = useState<Abstraction>(1);
   const [absFade, setAbsFade] = useState(false);
@@ -344,6 +538,14 @@ export default function GlassLab() {
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const shotRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const timers = useRef<number[]>([]);
+  /* 编译编排用：phase / 产物都放进 ref，因为异步回调和定时器
+     读不到最新 state（闭包会过期）。 */
+  const phaseRef = useRef<Phase>("landing");
+  const compiledRef = useRef<CompileView | null>(null);
+  const startAtRef = useRef(0);
+  const advancedRef = useRef(false);
+  const skipWantedRef = useRef(false);
+  const reqIdRef = useRef(0);
   /* 转场用：记下"你的词"在句子里的原始几何，以及编译台槽位的 DOM，
      用来算出 token 的起点位移（否则它只会从槽位正上方落下） */
   const userRects = useRef<{ condition?: DOMRect; phenomenon?: DOMRect }>({});
@@ -418,12 +620,92 @@ export default function GlassLab() {
 
   const segments = useMemo(() => (text ? segmentText(text) : null), [text]);
 
-  /* ---------- 编译转场编排 ---------- */
+  /* phase 的 ref 镜像：定时器与 fetch 回调里读不到最新的 state */
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+
+  /* 结果页 / 转场的数据源：真实编译产物优先。
+     未编译时（首屏）回落到内置示例 —— 首屏本来就不显示这些内容，
+     回落只为保证任何中间态都渲染得出来，不会白屏。 */
+  const nodes = compiled?.nodes ?? NODES;
+  const edges = compiled?.edges ?? EDGES;
+  const shots = compiled?.shots ?? SHOTS;
+  const chain = compiled?.chain ?? CHAIN;
+  const totalSec = compiled?.totalSec ?? 38;
+
+  /* ---------- 编译：真实请求 + 转场编排 ---------- */
+
+  /**
+   * compile(text, options) —— 真调后端。
+   * 未收录的问题后端会走模型生成；模型失败 / 未配置模型时返回 422，
+   * 这里如实呈现，绝不拿一段 mock 顶着。
+   */
+  const tryAdvance = useCallback(() => {
+    if (advancedRef.current) return;
+    if (phaseRef.current !== "compiling") return;
+    if (!compiledRef.current) return; // 数据还没到，继续等
+    if (Date.now() < startAtRef.current + 1400) return; // 拍二还没演完
+    advancedRef.current = true;
+    if (skipWantedRef.current) {
+      phaseRef.current = "result";
+      setPhase("result");
+      return;
+    }
+    setStage(3); // 补链
+    timers.current.push(window.setTimeout(() => setStage(4), 800)); // 落定
+    timers.current.push(
+      window.setTimeout(() => {
+        phaseRef.current = "result";
+        setPhase("result");
+      }, 1220),
+    );
+  }, []);
+
+  const runCompile = useCallback(
+    async (question: string, o: CompileOptions) => {
+      const id = ++reqIdRef.current;
+      const sec = Number(o.duration.replace(/[^0-9]/g, "")) || 60;
+      const bail = (code: string, message: string, suggestions: string[] = []) => {
+        setPending(false);
+        setCompileErr({ ok: false, code, message, suggestions });
+        timers.current.forEach((t) => window.clearTimeout(t));
+        timers.current = [];
+        phaseRef.current = "error";
+        setPhase("error");
+      };
+      try {
+        if (DEBUG_SLOW > 0) await new Promise((r) => window.setTimeout(r, DEBUG_SLOW));
+        const res = await fetch(DEBUG_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question, durationTargetSec: sec }),
+        });
+        if (id !== reqIdRef.current) return; // 已被后一次编译取代
+        const data = (await res.json()) as CompileResponse;
+        if (!res.ok || !data.ok) {
+          const err = data as CompileErr;
+          bail(err.code || "MODEL_FAILED", err.message || "这条问题暂时编译不了。", err.suggestions);
+          return;
+        }
+        const view = adaptCompile(data);
+        compiledRef.current = view;
+        setCompiled(view);
+        setPending(false);
+        setWaiting(false);
+        tryAdvance();
+      } catch {
+        if (id !== reqIdRef.current) return;
+        bail("NETWORK", "编译服务暂时不可用，请确认本地服务在运行后重试。");
+      }
+    },
+    [tryAdvance],
+  );
+
   const startCompile = useCallback(
     (q: string, o: CompileOptions) => {
       const question = q.trim();
       if (!question) return;
-      // compile(text, options) 预留接口：接入后端后此处改为 await fetch("/api/compile")
       deskRect.current = deskRef.current?.getBoundingClientRect() ?? null;
       /* 在输入框还没变形之前，把两个词的原位置量下来 */
       const grabMark = (cat: string) =>
@@ -436,28 +718,51 @@ export default function GlassLab() {
          转场里"你的词"就整个不见了。 */
       setCompiledRec(analyze(question));
       setCompiledOpts(o);
+      setCompiled(null);
+      setCompileErr(null);
+      compiledRef.current = null;
+      advancedRef.current = false;
+      skipWantedRef.current = false;
+      startAtRef.current = Date.now();
+      setPending(true);
+      setWaiting(false);
+      phaseRef.current = "compiling";
       setPhase("compiling");
       setStage(1);
       timers.current.forEach((t) => window.clearTimeout(t));
       timers.current = [
+        window.setTimeout(() => setStage(2), 400), // 定睛 400ms
         /* 硬性约束：每拍的动画必须能在自己的窗口内跑完。
-           上一版第三拍的连线/凝聚最长需要 1380ms，而窗口只有 800ms，
-           被下一拍切断 → 看起来"完全没有动"。改时序时必须同步改动画延迟。 */
-        window.setTimeout(() => setStage(2), 400), // 扫描 400ms
-        window.setTimeout(() => setStage(3), 1400), // 拆句 1000ms（460px 的可读飞行装不进 600ms）
-        window.setTimeout(() => setStage(4), 2200), // 重组 800ms
-        window.setTimeout(() => setPhase("result"), 2620), // 落定
+           第三拍不在这里定时 —— 它由请求决定何时开始（见 tryAdvance）。 */
+        window.setTimeout(() => {
+          // 拍二演完了模型还没回：如实说"在推演"，而不是假装已经补完
+          if (!compiledRef.current) setWaiting(true);
+          tryAdvance();
+        }, 1400),
       ];
+      void runCompile(question, o);
     },
-    [],
+    [runCompile, tryAdvance],
   );
 
-  /* 转场可跳过：Esc 或点「跳过」直接落到结果页 */
+  /* 转场可跳过：Esc 或点「跳过」。数据已到就直接落到结果页；
+     还在等模型时则快进到「推演中」，别让用户对着空槽干等。 */
   const skipCompile = useCallback(() => {
+    skipWantedRef.current = true;
     timers.current.forEach((t) => window.clearTimeout(t));
     timers.current = [];
-    setPhase("result");
-  }, []);
+    if (compiledRef.current) {
+      phaseRef.current = "result";
+      setPhase("result");
+      return;
+    }
+    if (phaseRef.current === "compiling") {
+      setStage(3);
+      setWaiting(!compiledRef.current);
+      startAtRef.current = -1e12; // 解除"拍二必须演完"的时间门槛
+      tryAdvance();
+    }
+  }, [tryAdvance]);
 
   useEffect(() => {
     if (phase !== "compiling") return;
@@ -487,13 +792,17 @@ export default function GlassLab() {
     }
     const n = Number(p.get("freeze"));
     const auto = p.get("auto") === "1";
+    DEBUG_SLOW = Number(p.get("slow") || 0) || 0;
+    DEBUG_API = p.get("api") || "/api/compile";
     if (!auto && (!n || n < 1 || n > 4)) return;
     deskRect.current = deskRef.current?.getBoundingClientRect() ?? null;
     if (auto) {
       /* 先把句子落到 text，等 mirror 层真的渲染出语义标记再触发编译 ——
-         否则测不到几何，token 只能用回退位移（这是脚手架问题，不是产品代码问题）。 */
-      setText(EXAMPLE);
-      window.setTimeout(() => startCompile(EXAMPLE, opts), 80);
+         否则测不到几何，token 只能用回退位移（这是脚手架问题，不是产品代码问题）。
+         ?q=... 可指定问题，用来核验"不同问题得到不同结果"。 */
+      const q = p.get("q") || EXAMPLE;
+      setText(q);
+      window.setTimeout(() => startCompile(q, opts), 80);
     } else {
       setText(EXAMPLE);
       setCompiledQuestion(EXAMPLE);
@@ -522,7 +831,7 @@ export default function GlassLab() {
      右端那个词就会凭空出现在画面另一侧，"从我的话里被拎出来"随即穿帮。 */
   useLayoutEffect(() => {
     if (phase !== "compiling" || stage < 2) return;
-    CHAIN.forEach((c, i) => {
+    chain.forEach((c, i) => {
       if (!c.from) return;
       const chip = chipRefs.current[i];
       const src = userRects.current[c.from];
@@ -531,7 +840,7 @@ export default function GlassLab() {
       chip.style.setProperty("--fx", `${src.left + src.width / 2 - (cr.left + cr.width / 2)}px`);
       chip.style.setProperty("--fy", `${src.top + src.height / 2 - (cr.top + cr.height / 2)}px`);
     });
-  }, [phase, stage]);
+  }, [phase, stage, chain]);
 
   /* ---------- FLIP：输入台缩至顶部 ---------- */
   useLayoutEffect(() => {
@@ -618,7 +927,7 @@ export default function GlassLab() {
     const qu = [hover];
     while (qu.length) {
       const c = qu.pop()!;
-      for (const e of EDGES) {
+      for (const e of edges) {
         if (e.to === c && !up.has(e.from) && e.from !== hover) {
           up.add(e.from);
           qu.push(e.from);
@@ -628,7 +937,7 @@ export default function GlassLab() {
     const qd = [hover];
     while (qd.length) {
       const c = qd.pop()!;
-      for (const e of EDGES) {
+      for (const e of edges) {
         if (e.from === c && !down.has(e.to) && e.to !== hover) {
           down.add(e.to);
           qd.push(e.to);
@@ -636,7 +945,7 @@ export default function GlassLab() {
       }
     }
     return { up, down };
-  }, [hover]);
+  }, [hover, edges]);
 
   const nodeDim = (id: string) =>
     hoverSet !== null && !(hoverSet.up.has(id) || hoverSet.down.has(id) || id === hover);
@@ -729,8 +1038,19 @@ export default function GlassLab() {
   /* ---------- 渲染数据 ---------- */
   const stageClass =
     phase === "compiling" ? (["", "is-scan", "is-split", "is-recombine", "is-unfold"][stage] ?? "") : "";
-  const stageNames = ["", "定睛 · 定位概念", "拆解 · 剥离提问", "补链 · 填补因果", "落定"];
+  /* 拍二演完、模型还没回时，第三拍的名字改说「推演」——
+     那正是 AI 在做的事：补全你没说出口的因果环节。 */
+  const stageNames = [
+    "",
+    "定睛 · 定位概念",
+    "拆解 · 剥离提问",
+    waiting ? "推演 · AI 正在补全因果链" : "补链 · 填补因果",
+    "落定",
+  ];
   const stageProgress = ["0", "0.15", "0.5", "0.85", "1"][stage] ?? "0";
+  /* 拍二演完、模型还没回时，说的应该是「在推演」，
+     而不是停在「拆解」让用户以为卡住了。 */
+  const beatLabel = waiting && stage <= 2 ? stageNames[3] : stageNames[stage];
   const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
   const template = useMemo(() => buildTemplate(compiledQuestion), [compiledQuestion]);
   /* 识别不到条件/现象时的兜底两段（见 splitSentence） */
@@ -750,7 +1070,75 @@ export default function GlassLab() {
         <div className="noise" />
       </div>
 
-      {phase === "result" ? (
+      {phase === "error" ? (
+        /* ================= 失败态 =================
+           产品底线是"宁可说没收录，也不硬编"。这里如实说明 + 给出可点的建议，
+           绝不用一段无关的 mock 顶上去。 */
+        <div className="gl-landing">
+          <header className="gl-nav">
+            <div className="gl-brand">
+              <span className="gl-brand__mark">VIZLAB</span>
+              <span className="gl-brand__sub">提示词编译台 · PROMPT COMPILER</span>
+            </div>
+          </header>
+          <section className="gl-error">
+            <div className="glass gl-error__card">
+              <span className="gl-error__tag">
+                {compileErr?.code === "NOT_COVERED"
+                  ? "NOT COVERED"
+                  : compileErr?.code === "NETWORK"
+                    ? "OFFLINE"
+                    : "MODEL FAILED"}
+              </span>
+              <h2>
+                {compileErr?.code === "NOT_COVERED"
+                  ? "这条问题暂未收录"
+                  : compileErr?.code === "NETWORK"
+                    ? "连不上编译服务"
+                    : "模型没能完成这次编译"}
+              </h2>
+              <p className="gl-error__msg">
+                {compileErr?.message ?? "这次编译没有成功。"}
+                {compileErr?.code === "NOT_COVERED" &&
+                  "　　我们不编造答案 —— 与其给你一段和问题无关的方案，不如直说。"}
+              </p>
+              {!!compileErr?.suggestions?.length && (
+                <>
+                  <p className="gl-error__hint">换一个试试：</p>
+                  <div className="gl-error__sug">
+                    {compileErr.suggestions.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        className="glass gl-chip"
+                        onClick={() => {
+                          setText(s);
+                          setCompileErr(null);
+                          phaseRef.current = "landing";
+                          setPhase("landing");
+                        }}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              <button
+                type="button"
+                className="gl-compile gl-error__back"
+                onClick={() => {
+                  setCompileErr(null);
+                  phaseRef.current = "landing";
+                  setPhase("landing");
+                }}
+              >
+                重新提问
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : phase === "result" ? (
         /* ================= 结果页 ================= */
         <div className="gl-result-wrap">
           <header className="gl-nav">
@@ -790,7 +1178,9 @@ export default function GlassLab() {
                   <h2>
                     概念图 · <b>因果链</b>
                   </h2>
-                  <p className="gl-sub">从原句抽象出的 8 步机制 · 悬停查看上下游 · 节点可拖拽（松手回弹）</p>
+                  <p className="gl-sub">
+                    从原句抽象出的 {nodes.length} 步机制 · 悬停查看上下游 · 节点可拖拽（松手回弹）
+                  </p>
                 </div>
                 <div className="gl-abs" role="radiogroup" aria-label="抽象程度">
                   <span
@@ -817,8 +1207,8 @@ export default function GlassLab() {
 
               <div className={`glass gl-graph${absFade ? " is-fading" : ""}`}>
                 <svg className="gl-graph__svg" viewBox={`0 0 ${GRAPH_W} ${GRAPH_H}`} aria-hidden="true">
-                  {EDGES.map((e, i) => {
-                    const dpath = edgePath(e);
+                  {edges.map((e, i) => {
+                    const dpath = edgePath(e, nodes);
                     const dim = edgeDim(e);
                     return (
                       <g key={`${e.from}-${e.to}`} className={dim ? "dim" : ""}>
@@ -837,14 +1227,16 @@ export default function GlassLab() {
                   })}
                 </svg>
 
-                {NODES.map((n, i) => {
+                {nodes.map((n, i) => {
                   /* 上下游关系：原先只有 hover 才可见，读屏与键盘用户永远拿不到。
                      改成 <button> + aria-describedby 后，聚焦即可获得同样的信息。 */
-                  const ups = EDGES.filter((e) => e.to === n.id)
-                    .map((e) => NODES.find((x) => x.id === e.from)?.labels[abstraction])
+                  const ups = edges
+                    .filter((e) => e.to === n.id)
+                    .map((e) => nodes.find((x) => x.id === e.from)?.labels[abstraction])
                     .filter(Boolean) as string[];
-                  const downs = EDGES.filter((e) => e.from === n.id)
-                    .map((e) => NODES.find((x) => x.id === e.to)?.labels[abstraction])
+                  const downs = edges
+                    .filter((e) => e.from === n.id)
+                    .map((e) => nodes.find((x) => x.id === e.to)?.labels[abstraction])
                     .filter(Boolean) as string[];
                   const desc = [
                     ups.length ? `上游：${ups.join("、")}` : "",
@@ -908,13 +1300,15 @@ export default function GlassLab() {
               <div className="gl-section-head">
                 <div>
                   <h2>
-                    分镜 · <b>8 镜</b> · 38s
+                    分镜 · <b>{shots.length} 镜</b> · {totalSec}s
                   </h2>
-                  <p className="gl-sub">胶片卡与时间轴双向联动 · 第 5 镜为关键转折</p>
+                  <p className="gl-sub">
+                    胶片卡与时间轴双向联动 · 第 {Math.floor(shots.length / 2) + 1} 镜为关键转折
+                  </p>
                 </div>
               </div>
               <div className="gl-shots">
-                {SHOTS.map((s, i) => (
+                {shots.map((s, i) => (
                   <button
                     key={s.no}
                     ref={(el) => {
@@ -933,7 +1327,7 @@ export default function GlassLab() {
                 ))}
               </div>
               <div className="gl-timeline" role="group" aria-label="分镜时间轴">
-                {SHOTS.map((s, i) => (
+                {shots.map((s, i) => (
                   <button
                     key={s.no}
                     className={`gl-tl-seg${activeShot === i ? " on" : ""}${s.tone === "amber" ? " amber" : ""}`}
@@ -1018,7 +1412,10 @@ export default function GlassLab() {
             <p className="gl-hero__sub">抽象概念结构 × 可执行提示词 · 输入一句“条件 + 现象”式的疑问试试</p>
           </section>
 
-          <div className={`gl-desk-zone${stageClass ? ` ${stageClass}` : ""}`}>
+          <div
+            className={`gl-desk-zone${stageClass ? ` ${stageClass}` : ""}`}
+            aria-busy={pending}
+          >
             {/* 输入台 + 其正下方的编译台（共用一层定位上下文） */}
             <div className="gl-desk-wrap">
             {/* 玻璃输入台 */}
@@ -1087,9 +1484,17 @@ export default function GlassLab() {
 
             {/* 编译转场 · 编译四拍：主角是"你那句话"本身 */}
             {phase === "compiling" && (
-              <div className="gl-trans">
-                {CHAIN.flatMap((c, i) => {
-                  const node = NODES.find((n) => n.id === c.id)!;
+              <div
+                className="gl-trans"
+                /* 槽数是变量（真实概念链可能是 3~5 环），列模板按槽数生成 */
+                style={{
+                  gridTemplateColumns: Array.from({ length: chain.length })
+                    .map(() => "1fr")
+                    .join(" 24px ") || "1fr",
+                }}
+              >
+                {chain.flatMap((c, i) => {
+                  const node = nodes.find((n) => n.id === c.id)!;
                   const userWord =
                     c.from === "condition"
                       ? compiledRec?.condition || fbA
@@ -1109,7 +1514,7 @@ export default function GlassLab() {
                       <span className="gl-tchip__node">{node.labels[1]}</span>
                     </div>
                   );
-                  return i < CHAIN.length - 1
+                  return i < chain.length - 1
                     ? [
                         chip,
                         <span
@@ -1121,12 +1526,12 @@ export default function GlassLab() {
                     : [chip];
                 })}
                 <div className="gl-trans__foot">
-                  <span className="gl-trans__beat">{stageNames[stage]}</span>
-                  <span className="gl-trans__bar">
+                  <span className="gl-trans__beat">{beatLabel}</span>
+                  <span className={`gl-trans__bar${waiting && stage < 4 ? " is-waiting" : ""}`}>
                     <i style={{ ["--p" as string]: stageProgress } as CSSProperties} />
                   </span>
                   <button type="button" className="gl-trans__skip" onClick={skipCompile}>
-                    跳过 <kbd>Esc</kbd>
+                    {waiting ? "先看结果" : "跳过"} <kbd>Esc</kbd>
                   </button>
                 </div>
               </div>
@@ -1137,7 +1542,7 @@ export default function GlassLab() {
             <div className="gl-stage" aria-live="polite">
               {phase === "compiling" ? (
                 <>
-                  <span>{stageNames[stage]}</span>
+                  <span>{beatLabel}</span>
                   <span className="gl-stage__bar">
                     <i style={{ ["--p" as string]: stageProgress } as CSSProperties} />
                   </span>

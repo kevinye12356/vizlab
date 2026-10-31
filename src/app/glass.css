@@ -395,6 +395,42 @@ button { font-family: inherit; cursor: pointer; }
   transform: scaleX(var(--p, 0)); transform-origin: left center;
   transition: transform 420ms var(--ease);
 }
+/* 等待模型返回：进度条本身在动，说明"还在跑"，而不是卡在某个百分比上 */
+.gl-trans__bar.is-waiting i {
+  transform: none; transform-origin: left center;
+  animation: tbar-wait 1.5s var(--ease) infinite;
+}
+@keyframes tbar-wait {
+  0% { transform: scaleX(0.08); }
+  50% { transform: scaleX(0.62); }
+  100% { transform: scaleX(0.08); }
+}
+
+/* ============================================================
+   失败态（未收录 / 模型失败 / 服务不可达）
+   产品底线是"宁可说没收录也不硬编"，所以这里必须像样：
+   说清发生了什么 + 给出可点的替代，而不是甩一个错误码。
+   ============================================================ */
+.gl-error {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: 0 24px 8vh;
+}
+.gl-error__card {
+  width: min(560px, 100%);
+  border-radius: var(--r-xl);
+  padding: 30px 32px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.gl-error__tag {
+  font-family: var(--font-mono); font-size: 10.5px;
+  letter-spacing: 0.2em; color: var(--amber);
+}
+.gl-error__card h2 { font-size: 21px; font-weight: 400; letter-spacing: 0.01em; }
+.gl-error__msg { color: var(--ink-dim); font-size: 13.5px; line-height: 1.75; }
+.gl-error__hint { font-size: 12px; color: var(--ink-faint); margin-top: 4px; }
+.gl-error__sug { display: flex; flex-wrap: wrap; gap: 9px; }
+.gl-error__sug .gl-chip { font: inherit; cursor: pointer; }
+.gl-error__back { align-self: flex-start; margin-top: 8px; }
 
 /* ---------- 槽位 ---------- */
 .gl-tchip {
@@ -421,6 +457,9 @@ button { font-family: inherit; cursor: pointer; }
   /* 字号沿用正文字号，才能和输入框里的原词严丝合缝地对上 */
   font-size: inherit; font-weight: 500; letter-spacing: 0.01em;
   opacity: 0; pointer-events: none;
+  /* 进入「补链」拍时动画失效、回落到 opacity:0 —— 这条 transition
+     让"你的词 → 概念"是交叉淡入，而不是啪地跳掉。 */
+  transition: opacity 280ms var(--ease);
 }
 .gl-tchip--cond .gl-tchip__user { color: var(--blue); }
 .gl-tchip--phen .gl-tchip__user { color: var(--teal); }
@@ -460,22 +499,22 @@ button { font-family: inherit; cursor: pointer; }
   to { opacity: 0.34; text-decoration-color: transparent; }
 }
 
-/* 拍二 · 拆解：你的词落下，并变成概念 */
+/* 拍二 · 拆解：你的词从句子里飞进槽位，并【停在那里】。
+   不在这里替换成概念 —— 因为真实编译要等模型（可能好几秒），
+   替换要留到「补链」拍（数据真到了）才发生。等待期间用户看到的是
+   自己那句话停在编译台上，而不是一个空槽。 */
 .is-split .gl-tchip__user { animation: tuser-drop 900ms var(--ease) both; }
 .is-split .gl-tchip--phen .gl-tchip__user { animation-delay: 100ms; }
 @keyframes tuser-drop {
   /* --fx / --fy 由 JS 按真实几何算出：起点 = 这个词在句子里的原位置。
      所以它看起来是"从我的句子里被拎起来"，而不是从槽位上方凭空落下。 */
-  /* 可读性配比（总 900ms，全部落在拆句拍的 400–1400ms 内）：
-     出现 90ms → 原位停住可读 180ms → 浮起 22px → 飞行 450ms → 落位后淡出 180ms */
+  /* 可读性配比（总 900ms，落在拆句拍 400–1400ms 内）：
+     出现 90ms → 原位停住可读 180ms → 浮起 22px → 飞行 630ms 落位并停住 */
   0% { opacity: 0; transform: translate(var(--fx, 0px), var(--fy, -64px)); }
   10% { opacity: 1; transform: translate(var(--fx, 0px), var(--fy, -64px)); }
   30% { opacity: 1; transform: translate(var(--fx, 0px), calc(var(--fy, -64px) - 22px)); }
-  80% { opacity: 1; transform: translate(0, 0); }
-  100% { opacity: 0; transform: translate(0, 0); }
+  100% { opacity: 1; transform: translate(0, 0); }
 }
-.is-split .gl-tchip__node { animation: tnode-in 220ms var(--ease) both 680ms; }
-.is-split .gl-tchip--phen .gl-tchip__node { animation-delay: 780ms; } /* 780+220 = 1000ms，卡在窗口内 */
 /* 被拎走的两个词：后续拍焊住淡痕，否则切类会让它们在句子里"复活" */
 .is-recombine .gl-mark--cond,
 .is-recombine .gl-mark--phen,
@@ -484,10 +523,16 @@ button { font-family: inherit; cursor: pointer; }
   opacity: 0.34; animation: none; text-decoration-color: transparent;
 }
 @keyframes tnode-in { from { opacity: 0; } to { opacity: 1; } }
-/* 进入后续拍后，已揭示的两端必须保持可见。
-   stage 类互斥，切拍会把上一拍的 animation 一起带走、回落到 opacity:0。 */
+
+/* 拍三 · 补链：补上你没说出口的环节，按因果顺序。
+   两端在这里才从"你的词"交叉淡入成概念（此前一直是你的原词停在槽里）。 */
 .is-recombine .gl-tchip--start .gl-tchip__node,
-.is-recombine .gl-tchip--terminal .gl-tchip__node,
+.is-recombine .gl-tchip--terminal .gl-tchip__node {
+  color: var(--ink); animation: tnode-in 380ms var(--ease) both;
+}
+.is-recombine .gl-tchip--terminal .gl-tchip__node { animation-delay: 120ms; }
+/* 进入落定拍后，已揭示的两端必须保持可见。
+   stage 类互斥，切拍会把上一拍的 animation 一起带走、回落到 opacity:0。 */
 .is-unfold .gl-tchip--start .gl-tchip__node,
 .is-unfold .gl-tchip--terminal .gl-tchip__node {
   opacity: 1; animation: none; color: var(--ink);
@@ -578,16 +623,14 @@ button { font-family: inherit; cursor: pointer; }
    只会觉得"这网站没动效"。位移可以去掉，信息不能去掉。
    ============================================================ */
 [data-motion="simple"] .is-scan .gl-tchip { animation: none; opacity: 1; }
+/* 与完整模式同构：拍二只淡入"你的词"并停住，拍三才换成概念 */
 [data-motion="simple"] .is-split .gl-tchip__user { animation: tuser-fade 900ms linear both; }
 [data-motion="simple"] .is-split .gl-tchip--phen .gl-tchip__user { animation-delay: 100ms; }
 @keyframes tuser-fade {
   0% { opacity: 0; }
   18% { opacity: 1; }
-  52% { opacity: 1; }
-  100% { opacity: 0; }
+  100% { opacity: 1; }
 }
-[data-motion="simple"] .is-split .gl-tchip__node { animation: tnode-in 220ms linear both 680ms; }
-[data-motion="simple"] .is-split .gl-tchip--phen .gl-tchip__node { animation-delay: 780ms; }
 [data-motion="simple"] .is-recombine .gl-tchip--mid .gl-tchip__node,
 [data-motion="simple"] .is-recombine .gl-tchip--star .gl-tchip__node,
 [data-motion="simple"] .is-unfold .gl-tchip--mid .gl-tchip__node,
