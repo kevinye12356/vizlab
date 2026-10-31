@@ -330,22 +330,37 @@ export default function GlassLab() {
   const chipRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   /* ---------- 动效开关：localStorage + prefers-reduced-motion ---------- */
+  /* autoSimple = "因为系统偏好被自动设为简化"。它只做默认值，且必须在界面上
+     明确告诉用户、并给一键升级 —— 否则用户看到的是"动效没做"，却不知道
+     根因是自己的系统设置（这个默认值一旦写进 localStorage 就会粘死）。 */
+  const [autoSimple, setAutoSimple] = useState(false);
+  const chooseMotion = (m: MotionMode) => {
+    setAutoSimple(false);
+    setMotion(m);
+  };
+
   useEffect(() => {
     let stored: string | null = null;
     try {
-      stored = localStorage.getItem("vizlab-motion");
+      stored = localStorage.getItem("vizlab-motion-v2");
     } catch { /* 忽略 */ }
-    if (stored === "full" || stored === "simple") setMotion(stored);
-    else if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (stored === "full" || stored === "simple") {
+      setMotion(stored);
+      return;
+    }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setMotion("simple");
+      setAutoSimple(true);
     }
   }, []);
   useEffect(() => {
     document.documentElement.dataset.motion = motion;
+    /* 只持久化"用户明确选过"的状态 */
+    if (autoSimple) return;
     try {
-      localStorage.setItem("vizlab-motion", motion);
+      localStorage.setItem("vizlab-motion-v2", motion);
     } catch { /* 忽略 */ }
-  }, [motion]);
+  }, [motion, autoSimple]);
 
   /* ---------- 打字机占位轮播（聚焦停止） ---------- */
   useEffect(() => {
@@ -405,9 +420,9 @@ export default function GlassLab() {
       setStage(1);
       timers.current.forEach((t) => window.clearTimeout(t));
       timers.current = [
-        window.setTimeout(() => setStage(2), 420), // 拆解 420–1080ms
-        window.setTimeout(() => setStage(3), 1080), // 补链 1080–1780ms
-        window.setTimeout(() => setStage(4), 1780), // 落定
+        window.setTimeout(() => setStage(2), 400), // 拆解：扫描 400ms 后开始
+        window.setTimeout(() => setStage(3), 1000), // 补链：拆句 600ms 后开始
+        window.setTimeout(() => setStage(4), 1800), // 落定：重组 800ms 后开始
         window.setTimeout(() => setPhase("result"), 2150), // 交棒给结果页
       ];
     },
@@ -440,6 +455,13 @@ export default function GlassLab() {
      验证"动画是否真的在跑"，而不只是看静止的端点。 */
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
+    /* ?motion=full|simple 强制指定动效模式 —— 必须能在核验时绕开
+       localStorage 与系统偏好，否则 headless（默认报告 reduce）永远验的是简化模式。 */
+    const forceMotion = p.get("motion");
+    if (forceMotion === "full" || forceMotion === "simple") {
+      setAutoSimple(false);
+      setMotion(forceMotion);
+    }
     const n = Number(p.get("freeze"));
     const auto = p.get("auto") === "1";
     if (!auto && (!n || n < 1 || n > 4)) return;
@@ -711,14 +733,20 @@ export default function GlassLab() {
               <span className="gl-brand__mark">VIZLAB</span>
               <span className="gl-brand__sub">提示词编译台 · PROMPT COMPILER</span>
             </div>
+            <div className="gl-pill glass">目标模型：Opus 5.5</div>
             <div className="gl-motion" role="group" aria-label="动效强度">
-              <button className={motion === "full" ? "on" : ""} aria-pressed={motion === "full"} onClick={() => setMotion("full")}>
+              <button className={motion === "full" ? "on" : ""} aria-pressed={motion === "full"} onClick={() => chooseMotion("full")}>
                 动效：完整
               </button>
-              <button className={motion === "simple" ? "on" : ""} aria-pressed={motion === "simple"} onClick={() => setMotion("simple")}>
+              <button className={motion === "simple" ? "on" : ""} aria-pressed={motion === "simple"} onClick={() => chooseMotion("simple")}>
                 简化
               </button>
             </div>
+            {autoSimple && motion === "simple" && (
+              <button type="button" className="gl-motion-hint" onClick={() => chooseMotion("full")}>
+                已按系统偏好简化 · 点此开启完整动效
+              </button>
+            )}
           </header>
 
           {/* FLIP 目标：输入台缩至顶部 */}
@@ -941,14 +969,20 @@ export default function GlassLab() {
               <span className="gl-brand__sub">提示词编译台 · PROMPT COMPILER</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div className="gl-pill glass">目标模型：Opus 5.5</div>
               <div className="gl-motion" role="group" aria-label="动效强度">
-                <button className={motion === "full" ? "on" : ""} aria-pressed={motion === "full"} onClick={() => setMotion("full")}>
+                <button className={motion === "full" ? "on" : ""} aria-pressed={motion === "full"} onClick={() => chooseMotion("full")}>
                   动效：完整
                 </button>
-                <button className={motion === "simple" ? "on" : ""} aria-pressed={motion === "simple"} onClick={() => setMotion("simple")}>
+                <button className={motion === "simple" ? "on" : ""} aria-pressed={motion === "simple"} onClick={() => chooseMotion("simple")}>
                   简化
                 </button>
               </div>
+              {autoSimple && motion === "simple" && (
+                <button type="button" className="gl-motion-hint" onClick={() => chooseMotion("full")}>
+                  已按系统偏好简化 · 点此开启完整动效
+                </button>
+              )}
             </div>
           </header>
 
@@ -968,6 +1002,7 @@ export default function GlassLab() {
               className="glass glass--spot gl-desk"
               onMouseMove={onDeskMove}
             >
+              <div className="gl-desk__main">
               <div className="gl-field">
                 <input
                   ref={inputRef}
@@ -1007,6 +1042,22 @@ export default function GlassLab() {
                 {phase === "compiling" ? "编译中" : "编译"}
                 <span>Enter ↵</span>
               </button>
+              </div>
+              {/* 实时识别：并入输入台内部，成为这块玻璃的第二行 */}
+              <div className="gl-rec" aria-live="polite">
+                {rec ? (
+                  <>
+                    <span className="gl-rec__tag">已识别</span>
+                    {rec.questionType && <span className="gl-chip gl-chip--qt">{rec.questionType} · 问题类型</span>}
+                    {rec.condition && <span className="gl-chip gl-chip--cond">{rec.condition} · 条件</span>}
+                    {rec.phenomenon && <span className="gl-chip gl-chip--phen">{rec.phenomenon} · 现象</span>}
+                  </>
+                ) : (
+                  <span className="gl-rec__hint">
+                    实时识别：编译器会标出这句话里的 条件 / 现象 / 问题类型
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* 编译转场 · 编译四拍：主角是"你那句话"本身 */}
@@ -1074,28 +1125,6 @@ export default function GlassLab() {
               )}
             </div>
 
-            {/* 实时识别行 */}
-            <div className="gl-rec" aria-live="polite">
-              {phase === "compiling" ? (
-                <>
-                  <span className="gl-rec__tag">已识别</span>
-                  {rec?.questionType && <span className="gl-chip gl-chip--qt">{rec.questionType} · 问题类型</span>}
-                  {rec?.condition && <span className="gl-chip gl-chip--cond">{rec.condition} · 条件</span>}
-                  {rec?.phenomenon && <span className="gl-chip gl-chip--phen">{rec.phenomenon} · 现象</span>}
-                </>
-              ) : rec ? (
-                <>
-                  <span className="gl-rec__tag">已识别</span>
-                  {rec.questionType && <span className="gl-chip gl-chip--qt">{rec.questionType} · 问题类型</span>}
-                  {rec.condition && <span className="gl-chip gl-chip--cond">{rec.condition} · 条件</span>}
-                  {rec.phenomenon && <span className="gl-chip gl-chip--phen">{rec.phenomenon} · 现象</span>}
-                </>
-              ) : (
-                <span className="gl-rec__hint">
-                  实时识别：编译器会标出这句话里的 条件 / 现象 / 问题类型
-                </span>
-              )}
-            </div>
 
             {/* 选项条 */}
             <div className="gl-opts" role="group" aria-label="编译选项">

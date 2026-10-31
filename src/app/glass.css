@@ -14,15 +14,12 @@
   --bg: #070B14;
   --bg-deep: #05080F;
   --ink: #E8EEF7;
-  /* 次要文字两档。WCAG AA 要求标签/正文 ≥4.5:1。
-     实测（毛玻璃面板底色 rgb(15,21,32) 上）：
-       0.34 → 2.8:1 ✗   0.20 → 1.7:1 ✗   0.58 → 5.9:1 ✓   0.52 → 4.9:1 ✓
-     深色底上放不下三档低对比文字，故收敛为两档；更低的层级
-     改由字号 / 字重 / 字距表达（craft-floor 也要求强调靠字重而非颜色）。
-     ghost 是 faint 的旧名，仅为兼容保留，勿再用于需要区分的层级。 */
-  --ink-dim: rgba(232, 238, 247, 0.58);
-  --ink-faint: rgba(232, 238, 247, 0.52);
-  --ink-ghost: rgba(232, 238, 247, 0.52);
+  /* 次级文字下限 ≥68% 不透明度（规范要求）。
+     更深的层级不靠降低不透明度表达，改用字号 / 字重 / 字距；
+     ghost 是 faint 的旧名，仅为兼容保留。 */
+  --ink-dim: rgba(232, 238, 247, 0.72);
+  --ink-faint: rgba(232, 238, 247, 0.68);
+  --ink-ghost: rgba(232, 238, 247, 0.68);
 
   --cyan: #5CE1E6;
   --cyan-soft: rgba(92, 225, 230, 0.14);
@@ -34,10 +31,8 @@
   --amber-line: rgba(255, 184, 107, 0.5);
 
   /* 玻璃 */
-  /* 填充改用偏冷的低饱和色：纯白叠加会把背景色彩洗成灰，
-     带蓝的填充能保住背景的色相差异。 */
-  --glass-fill: rgba(146, 180, 220, 0.06);
-  --glass-fill-strong: rgba(150, 186, 226, 0.088);
+  --glass-fill: rgba(255, 255, 255, 0.055);
+  --glass-fill-strong: rgba(255, 255, 255, 0.075);
   --glass-border: rgba(255, 255, 255, 0.14);
   --glass-blur: blur(24px) saturate(160%);
   --glass-blur-lite: blur(10px);
@@ -68,6 +63,9 @@
 
   /* 布局 */
   --max-w: 1240px;
+  /* 首屏重心：副标题 → 输入台、输入台 → 选项条 */
+  --gap-hero-input: 48px;
+  --gap-input-options: 20px;
 }
 
 html { color-scheme: dark; }
@@ -135,8 +133,8 @@ button { font-family: inherit; cursor: pointer; }
 .bg-layer::before {
   content: ""; position: absolute; inset: 0;
   background-image:
-    repeating-linear-gradient(0deg, rgba(140, 195, 235, 0.062) 0 1px, transparent 1px 76px),
-    repeating-linear-gradient(90deg, rgba(140, 195, 235, 0.062) 0 1px, transparent 1px 76px);
+    repeating-linear-gradient(0deg, rgba(140, 195, 235, 0.038) 0 1px, transparent 1px 76px),
+    repeating-linear-gradient(90deg, rgba(140, 195, 235, 0.038) 0 1px, transparent 1px 76px);
   -webkit-mask-image: radial-gradient(130% 96% at 50% 26%, #000 10%, transparent 76%);
   mask-image: radial-gradient(130% 96% at 50% 26%, #000 10%, transparent 76%);
 }
@@ -200,7 +198,7 @@ button { font-family: inherit; cursor: pointer; }
    玻璃质感主要来自 1px 渐变描边 + 内顶亮线 + 多层外阴影 + 半透明填充，
    去掉 backdrop 后观感几乎无损，但合成开销从 25 个面降到 2 个。 */
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .gl-desk, .gl-topbar {
+  .gl-desk, .gl-topbar, .gl-graph {
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
   }
@@ -248,7 +246,7 @@ button { font-family: inherit; cursor: pointer; }
   padding: 8px 16px; border-radius: var(--r-pill);
   font-family: var(--font-mono); font-size: 12px; color: var(--ink-dim);
 }
-.gl-hero { text-align: center; padding: 8vh 24px 0; }
+.gl-hero { text-align: center; padding: 12vh 24px var(--gap-hero-input); }
 .gl-hero h1 {
   font-size: clamp(26px, 4.2vw, 46px); font-weight: 300;
   letter-spacing: 0.02em; line-height: 1.35;
@@ -261,16 +259,24 @@ button { font-family: inherit; cursor: pointer; }
    ============================================================ */
 .gl-desk-zone {
   flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  padding: 48px 24px 56px; gap: 18px;
+  align-items: center;
+  /* 不再垂直居中：改为自标题向下排布，
+     让"副标题 → 输入台 48px / 输入台 → 选项条 20px"可被精确控制，
+     形成紧凑的中心视觉组。 */
+  justify-content: flex-start;
+  padding: 0 24px 56px;
+  gap: var(--gap-input-options);
 }
 .gl-desk {
   width: min(720px, 100%);
   border-radius: var(--r-xl);
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 10px 10px 4px;
+  /* 输入行 + 识别行同处一块玻璃内：识别是输入台的一部分，
+     这样"输入台 → 选项条"才能压到 16–24px，不被识别行撑开。 */
+  display: flex; flex-direction: column; align-items: stretch; gap: 0;
+  padding: 10px 10px 0 4px;
   transition: box-shadow var(--dur-mid) var(--ease);
 }
+.gl-desk__main { display: flex; align-items: center; gap: 12px; }
 .gl-desk:focus-within,
 .gl-desk.is-scan {
   box-shadow: var(--glass-inner-top), var(--glass-shadow),
@@ -453,6 +459,8 @@ button { font-family: inherit; cursor: pointer; }
      所以它看起来是"从我的句子里被拎起来"，而不是从槽位上方凭空落下。 */
   0% { opacity: 0; transform: translate(var(--fx, 0px), var(--fy, -64px)); }
   14% { opacity: 1; transform: translate(var(--fx, 0px), var(--fy, -64px)); }
+  /* 先向上浮起 22px（"关键词浮起"），再落进槽位 —— 而不是直接垂直掉下去 */
+  30% { opacity: 1; transform: translate(var(--fx, 0px), calc(var(--fy, -64px) - 22px)); }
   68% { opacity: 1; transform: translate(0, 0); }
   100% { opacity: 0; transform: translate(0, 0); }
 }
@@ -545,24 +553,52 @@ button { font-family: inherit; cursor: pointer; }
   background: rgba(146, 180, 220, 0.1); color: var(--ink-faint);
 }
 
-/* 简化动效：不做位移，只保留"你的词 → 概念"的语义替换 */
-[data-motion="simple"] .gl-tchip__user { display: none; }
-[data-motion="simple"] .is-split .gl-tchip__node,
-[data-motion="simple"] .is-recombine .gl-tchip__node { animation: none; opacity: 1; }
-[data-motion="simple"] .gl-recombine .gl-tchip--star,
-[data-motion="simple"] .is-recombine .gl-tchip--star { animation: none; opacity: 1; filter: none; }
-[data-motion="simple"] .is-recombine .gl-tedge { animation: none; transform: scaleX(1); }
-[data-motion="simple"] .is-scan .gl-mark--qt { animation: none; opacity: 0.3; }
-/* 简化模式不放 token，所以句子里那两个词必须留着，否则就凭空没了 */
-[data-motion="simple"] .is-split .gl-mark--cond,
-[data-motion="simple"] .is-split .gl-mark--phen { animation: none; }
+/* ============================================================
+   简化动效（reduced-motion）
+   去掉一切位移，但**保留"你的词 → 概念"的语义替换**。
+   原先这里把 .gl-tchip__user 直接 display:none，等于连内容一起丢了 ——
+   被系统偏好判为简化的用户，永远看不到"我的话被抽成概念"这一步，
+   只会觉得"这网站没动效"。位移可以去掉，信息不能去掉。
+   ============================================================ */
 [data-motion="simple"] .is-scan .gl-tchip { animation: none; opacity: 1; }
+[data-motion="simple"] .is-split .gl-tchip__user { animation: tuser-fade 1000ms linear both; }
+[data-motion="simple"] .is-split .gl-tchip--phen .gl-tchip__user { animation-delay: 160ms; }
+@keyframes tuser-fade {
+  0% { opacity: 0; }
+  18% { opacity: 1; }
+  52% { opacity: 1; }
+  100% { opacity: 0; }
+}
+[data-motion="simple"] .is-split .gl-tchip__node { animation: tnode-in 420ms linear both 560ms; }
+[data-motion="simple"] .is-split .gl-tchip--phen .gl-tchip__node { animation-delay: 700ms; }
+[data-motion="simple"] .is-recombine .gl-tchip--mid .gl-tchip__node,
+[data-motion="simple"] .is-recombine .gl-tchip--star .gl-tchip__node,
+[data-motion="simple"] .is-unfold .gl-tchip--mid .gl-tchip__node,
+[data-motion="simple"] .is-unfold .gl-tchip--star .gl-tchip__node {
+  animation: tnode-in 420ms linear both; opacity: 1; color: var(--ink);
+}
+[data-motion="simple"] .is-recombine .gl-tchip--star .gl-tchip__node,
+[data-motion="simple"] .is-unfold .gl-tchip--star .gl-tchip__node { color: var(--cyan); }
+[data-motion="simple"] .is-recombine .gl-tchip--star,
+[data-motion="simple"] .is-unfold .gl-tchip--star { animation: none; opacity: 1; filter: none; }
+[data-motion="simple"] .is-recombine .gl-tedge,
+[data-motion="simple"] .is-unfold .gl-tedge {
+  animation: tnode-in 500ms linear both; transform: scaleX(1);
+}
+[data-motion="simple"] .is-recombine .gl-tedge--2 { animation-delay: 200ms; }
+[data-motion="simple"] .is-recombine .gl-tedge--3 { animation-delay: 400ms; }
+[data-motion="simple"] .is-scan .gl-mark--qt { animation: none; opacity: 0.3; }
+[data-motion="simple"] .is-split .gl-mark--cond,
+[data-motion="simple"] .is-split .gl-mark--phen { animation: tmark-lift 400ms linear both 60ms; }
+[data-motion="simple"] .is-split .gl-mark--phen { animation-delay: 220ms; }
 
 /* 阶段说明 / 实时识别 */
+/* 阶段说明：视觉状态由编译台页脚承担；
+   本行保留为读屏的 aria-live 通道、不占版面（否则选项条间距被撑开）。 */
 .gl-stage {
-  display: flex; align-items: center; gap: 12px;
-  font-family: var(--font-mono); font-size: 12px;
-  color: var(--cyan); letter-spacing: 0.12em; min-height: 20px;
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; border: 0;
 }
 .gl-stage__bar {
   width: 120px; height: 2px; border-radius: 2px; overflow: hidden;
@@ -573,7 +609,13 @@ button { font-family: inherit; cursor: pointer; }
   transform-origin: left; transform: scaleX(var(--p, 0));
   transition: transform 400ms var(--ease);
 }
-.gl-rec { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 26px; font-size: 12.5px; }
+.gl-rec {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  min-height: 0; font-size: 12.5px;
+  /* 输入台内的第二行：用一条细线分隔，而不是独立占一块版面 */
+  margin: 8px 6px 0 16px; padding: 8px 0 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
 .gl-rec__tag {
   font-family: var(--font-mono); font-size: 10.5px;
   letter-spacing: 0.2em; color: var(--cyan);
@@ -623,6 +665,18 @@ button { font-family: inherit; cursor: pointer; }
 }
 .gl-motion button.on { color: var(--ink); background: rgba(255, 255, 255, 0.08); }
 
+/* 因系统偏好被自动简化时的提示 —— 让用户知道动效为什么没播。
+   用冷青而非琥珀：琥珀按规范只留给编译按钮与结果终点。 */
+.gl-motion-hint {
+  padding: 7px 14px; border-radius: var(--r-pill);
+  border: 1px solid rgba(92, 225, 230, 0.45);
+  background: rgba(92, 225, 230, 0.12);
+  color: var(--cyan);
+  font-size: 11.5px; letter-spacing: 0.02em;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.gl-motion-hint:hover { background: rgba(92, 225, 230, 0.22); border-color: var(--cyan); }
+
 /* 背景漂浮示例卡 */
 .gl-floats { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
 .gl-float-card {
@@ -634,11 +688,15 @@ button { font-family: inherit; cursor: pointer; }
      动画 margin-top 每帧都会触发 layout + paint，6 张卡同时跑必然掉帧。 */
   animation: gl-floaty 12s ease-in-out infinite alternate;
   animation-delay: var(--d, 0s);
-  opacity: 0.75;
+  opacity: 0.5;
   will-change: translate;
-  transition: color var(--dur-fast) var(--ease);
+  transition: color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+  box-shadow: var(--glass-inner-top), 0 8px 24px rgba(2, 6, 18, 0.28);
 }
-.gl-float-card:hover { color: var(--ink); }
+/* 示例卡降低亮度与边框存在感：它是氛围，不该抢输入台的注意力 */
+.gl-float-card::before { opacity: 0.45; }
+.gl-float-card:hover { color: var(--ink); opacity: 0.85; }
+.gl-float-card:hover::before { opacity: 1; }
 @keyframes gl-floaty { 0% { translate: 0 0; } 100% { translate: 0 -14px; } }
 
 /* ============================================================
