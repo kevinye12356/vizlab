@@ -423,18 +423,22 @@ button { font-family: inherit; cursor: pointer; }
 .gl-tchip--terminal { border-style: solid; border-color: var(--amber-line); }
 
 /* 拍一 · 定睛：工作台依次就位 */
-.is-scan .gl-tchip { animation: tchip-slot 520ms var(--ease) both; }
-.is-scan .gl-tchip:nth-of-type(3) { animation-delay: 80ms; }
-.is-scan .gl-tchip:nth-of-type(5) { animation-delay: 160ms; }
-.is-scan .gl-tchip:nth-of-type(7) { animation-delay: 240ms; }
+.is-scan .gl-tchip { animation: tchip-slot 240ms var(--ease) both; }
+.is-scan .gl-tchip:nth-of-type(3) { animation-delay: 45ms; }
+.is-scan .gl-tchip:nth-of-type(5) { animation-delay: 90ms; }
+.is-scan .gl-tchip:nth-of-type(7) { animation-delay: 135ms; }
 @keyframes tchip-slot {
   0% { opacity: 0; transform: translateY(-12px) scale(0.96); }
   100% { opacity: 1; transform: none; }
 }
-/* 疑问词当场溶解：提问方式被剥掉，只留概念 */
-.is-scan .gl-mark--qt,
-.is-split .gl-mark--qt {
-  animation: tmark-gone 520ms var(--ease) both;
+/* 疑问词当场溶解：提问方式被剥掉，只留概念。
+   只在第一拍演（380ms 卡在 400ms 窗口内）；后续拍必须"焊住"，
+   否则切类会把动画一并带走、疑问词先亮回来再淡一次。 */
+.is-scan .gl-mark--qt { animation: tmark-gone 380ms var(--ease) both; }
+.is-split .gl-mark--qt,
+.is-recombine .gl-mark--qt,
+.is-unfold .gl-mark--qt {
+  opacity: 0.3; animation: none; text-decoration-color: transparent;
 }
 @keyframes tmark-gone {
   0% { opacity: 1; }
@@ -452,20 +456,28 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 /* 拍二 · 拆解：你的词落下，并变成概念 */
-.is-split .gl-tchip__user { animation: tuser-drop 780ms var(--ease) both; }
-.is-split .gl-tchip--phen .gl-tchip__user { animation-delay: 150ms; }
+.is-split .gl-tchip__user { animation: tuser-drop 900ms var(--ease) both; }
+.is-split .gl-tchip--phen .gl-tchip__user { animation-delay: 100ms; }
 @keyframes tuser-drop {
   /* --fx / --fy 由 JS 按真实几何算出：起点 = 这个词在句子里的原位置。
      所以它看起来是"从我的句子里被拎起来"，而不是从槽位上方凭空落下。 */
+  /* 可读性配比（总 900ms，全部落在拆句拍的 400–1400ms 内）：
+     出现 90ms → 原位停住可读 180ms → 浮起 22px → 飞行 450ms → 落位后淡出 180ms */
   0% { opacity: 0; transform: translate(var(--fx, 0px), var(--fy, -64px)); }
-  14% { opacity: 1; transform: translate(var(--fx, 0px), var(--fy, -64px)); }
-  /* 先向上浮起 22px（"关键词浮起"），再落进槽位 —— 而不是直接垂直掉下去 */
+  10% { opacity: 1; transform: translate(var(--fx, 0px), var(--fy, -64px)); }
   30% { opacity: 1; transform: translate(var(--fx, 0px), calc(var(--fy, -64px) - 22px)); }
-  68% { opacity: 1; transform: translate(0, 0); }
+  80% { opacity: 1; transform: translate(0, 0); }
   100% { opacity: 0; transform: translate(0, 0); }
 }
-.is-split .gl-tchip__node { animation: tnode-in 420ms var(--ease) both 500ms; }
-.is-split .gl-tchip--phen .gl-tchip__node { animation-delay: 650ms; }
+.is-split .gl-tchip__node { animation: tnode-in 220ms var(--ease) both 680ms; }
+.is-split .gl-tchip--phen .gl-tchip__node { animation-delay: 780ms; } /* 780+220 = 1000ms，卡在窗口内 */
+/* 被拎走的两个词：后续拍焊住淡痕，否则切类会让它们在句子里"复活" */
+.is-recombine .gl-mark--cond,
+.is-recombine .gl-mark--phen,
+.is-unfold .gl-mark--cond,
+.is-unfold .gl-mark--phen {
+  opacity: 0.34; animation: none; text-decoration-color: transparent;
+}
 @keyframes tnode-in { from { opacity: 0; } to { opacity: 1; } }
 /* 进入后续拍后，已揭示的两端必须保持可见。
    stage 类互斥，切拍会把上一拍的 animation 一起带走、回落到 opacity:0。 */
@@ -485,18 +497,18 @@ button { font-family: inherit; cursor: pointer; }
 }
 .is-recombine .gl-tchip--mid .gl-tchip__node,
 .is-recombine .gl-tchip--star .gl-tchip__node {
-  color: var(--ink); animation: tnode-in 460ms var(--ease) both;
+  color: var(--ink); animation: tnode-in 420ms var(--ease) both;
 }
-.is-recombine .gl-tchip--mid .gl-tchip__node { animation-delay: 210ms; }
+.is-recombine .gl-tchip--mid .gl-tchip__node { animation-delay: 180ms; }
 /* 关键环节 = 全片情绪峰值：模糊凝聚登场 */
 .is-recombine .gl-tchip--star {
-  animation: tstar-condense 940ms var(--ease) both 440ms;
+  animation: tstar-condense 620ms var(--ease) both 160ms; /* 160 + 620 = 780ms */
 }
 @keyframes tstar-condense {
   0% { opacity: 0; filter: blur(9px); transform: scale(1.14); }
   100% { opacity: 1; filter: blur(0); transform: scale(1); }
 }
-.is-recombine .gl-tchip--star .gl-tchip__node { animation-delay: 620ms; color: var(--cyan); }
+.is-recombine .gl-tchip--star .gl-tchip__node { animation-delay: 330ms; color: var(--cyan); } /* 330+420 = 750ms */
 
 /* 连线：依次"推"出去 */
 .gl-tedge {
@@ -510,10 +522,10 @@ button { font-family: inherit; cursor: pointer; }
   border-top: 1px solid var(--cyan-line); border-right: 1px solid var(--cyan-line);
   transform: rotate(45deg);
 }
-.is-recombine .gl-tedge { animation: tedge 520ms var(--ease) both; }
-.is-recombine .gl-tedge--1 { animation-delay: 60ms; }
-.is-recombine .gl-tedge--2 { animation-delay: 460ms; }
-.is-recombine .gl-tedge--3 { animation-delay: 860ms; }
+/* 三条连线全部必须在 800ms 的重组窗口内跑完：380 + 400 = 780ms */
+.is-recombine .gl-tedge { animation: tedge 380ms var(--ease) both; }
+.is-recombine .gl-tedge--2 { animation-delay: 200ms; }
+.is-recombine .gl-tedge--3 { animation-delay: 400ms; }
 @keyframes tedge { to { transform: scaleX(1); } }
 
 /* 拍四 · 落定：整条链下沉交棒 */
@@ -561,16 +573,16 @@ button { font-family: inherit; cursor: pointer; }
    只会觉得"这网站没动效"。位移可以去掉，信息不能去掉。
    ============================================================ */
 [data-motion="simple"] .is-scan .gl-tchip { animation: none; opacity: 1; }
-[data-motion="simple"] .is-split .gl-tchip__user { animation: tuser-fade 1000ms linear both; }
-[data-motion="simple"] .is-split .gl-tchip--phen .gl-tchip__user { animation-delay: 160ms; }
+[data-motion="simple"] .is-split .gl-tchip__user { animation: tuser-fade 900ms linear both; }
+[data-motion="simple"] .is-split .gl-tchip--phen .gl-tchip__user { animation-delay: 100ms; }
 @keyframes tuser-fade {
   0% { opacity: 0; }
   18% { opacity: 1; }
   52% { opacity: 1; }
   100% { opacity: 0; }
 }
-[data-motion="simple"] .is-split .gl-tchip__node { animation: tnode-in 420ms linear both 560ms; }
-[data-motion="simple"] .is-split .gl-tchip--phen .gl-tchip__node { animation-delay: 700ms; }
+[data-motion="simple"] .is-split .gl-tchip__node { animation: tnode-in 220ms linear both 680ms; }
+[data-motion="simple"] .is-split .gl-tchip--phen .gl-tchip__node { animation-delay: 780ms; }
 [data-motion="simple"] .is-recombine .gl-tchip--mid .gl-tchip__node,
 [data-motion="simple"] .is-recombine .gl-tchip--star .gl-tchip__node,
 [data-motion="simple"] .is-unfold .gl-tchip--mid .gl-tchip__node,
@@ -583,7 +595,7 @@ button { font-family: inherit; cursor: pointer; }
 [data-motion="simple"] .is-unfold .gl-tchip--star { animation: none; opacity: 1; filter: none; }
 [data-motion="simple"] .is-recombine .gl-tedge,
 [data-motion="simple"] .is-unfold .gl-tedge {
-  animation: tnode-in 500ms linear both; transform: scaleX(1);
+  animation: tnode-in 380ms linear both; transform: scaleX(1);
 }
 [data-motion="simple"] .is-recombine .gl-tedge--2 { animation-delay: 200ms; }
 [data-motion="simple"] .is-recombine .gl-tedge--3 { animation-delay: 400ms; }

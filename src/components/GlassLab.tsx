@@ -188,6 +188,26 @@ function analyze(text: string): Recognition | null {
   return { questionType, condition, phenomenon };
 }
 
+/**
+ * 兜底：识别不到「条件 / 现象」时，把用户原句切成两段来飞。
+ * 词仍然是用户自己的话，只是没做语义分类 —— 保证任何输入都有东西可飞。
+ * 真实接口的 sourceQuote（后端已按"原句出处"设计）接上后即替换这里。
+ */
+function splitSentence(q: string): [string, string] {
+  const clean = q
+    .replace(/^(为什么|为何|怎么会|什么原因|怎么)/, "")
+    .replace(/[？?！!。.\s]/g, "");
+  if (!clean) return ["", ""];
+  // 优先标点分句
+  const seg = clean.split(/[，,、；;：:]/).filter(Boolean);
+  if (seg.length >= 2) return [seg[0], seg.slice(1).join("")];
+  // 其次在常见的"主语 / 谓语"分界字处切 —— 比按中点硬切自然
+  const m = clean.match(/^(.*?)([是为的会能要在有把被].*)$/);
+  if (m) return [m[1], m[2]];
+  const mid = Math.ceil(clean.length / 2);
+  return [clean.slice(0, mid), clean.slice(mid)];
+}
+
 /** 最左优先 + 最长优先的关键词切分，用于彩色下划线 mirror 层 */
 function segmentText(text: string): Seg[] {
   const sorted = [...KEYWORDS].sort((a, b) => b.w.length - a.w.length);
@@ -420,10 +440,13 @@ export default function GlassLab() {
       setStage(1);
       timers.current.forEach((t) => window.clearTimeout(t));
       timers.current = [
-        window.setTimeout(() => setStage(2), 400), // 拆解：扫描 400ms 后开始
-        window.setTimeout(() => setStage(3), 1000), // 补链：拆句 600ms 后开始
-        window.setTimeout(() => setStage(4), 1800), // 落定：重组 800ms 后开始
-        window.setTimeout(() => setPhase("result"), 2150), // 交棒给结果页
+        /* 硬性约束：每拍的动画必须能在自己的窗口内跑完。
+           上一版第三拍的连线/凝聚最长需要 1380ms，而窗口只有 800ms，
+           被下一拍切断 → 看起来"完全没有动"。改时序时必须同步改动画延迟。 */
+        window.setTimeout(() => setStage(2), 400), // 扫描 400ms
+        window.setTimeout(() => setStage(3), 1400), // 拆句 1000ms（460px 的可读飞行装不进 600ms）
+        window.setTimeout(() => setStage(4), 2200), // 重组 800ms
+        window.setTimeout(() => setPhase("result"), 2620), // 落定
       ];
     },
     [],
@@ -710,6 +733,8 @@ export default function GlassLab() {
   const stageProgress = ["0", "0.15", "0.5", "0.85", "1"][stage] ?? "0";
   const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
   const template = useMemo(() => buildTemplate(compiledQuestion), [compiledQuestion]);
+  /* 识别不到条件/现象时的兜底两段（见 splitSentence） */
+  const [fbA, fbB] = useMemo(() => splitSentence(compiledQuestion), [compiledQuestion]);
 
   /* ============================================================ */
 
@@ -1067,9 +1092,9 @@ export default function GlassLab() {
                   const node = NODES.find((n) => n.id === c.id)!;
                   const userWord =
                     c.from === "condition"
-                      ? compiledRec?.condition
+                      ? compiledRec?.condition || fbA
                       : c.from === "phenomenon"
-                        ? compiledRec?.phenomenon
+                        ? compiledRec?.phenomenon || fbB
                         : undefined;
                   const chip = (
                     <div
