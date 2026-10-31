@@ -773,22 +773,28 @@ button { font-family: inherit; cursor: pointer; }
   padding-top: 28px;
 }
 .gl-topbar {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  display: flex; align-items: center; gap: 14px;
   width: min(720px, 100%); margin: 0 auto;
-  padding: 10px 12px 10px 22px;
+  padding: 8px 20px 8px 8px;
   transform-origin: top left;
 }
 .gl-topbar__text {
+  flex: 1; min-width: 0; text-align: center;
   color: var(--ink-dim); font-size: 14px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.gl-edit {
-  flex-shrink: 0; border: 0; background: transparent;
-  color: var(--cyan); font-family: var(--font-mono); font-size: 12px;
-  padding: 8px 14px; border-radius: var(--r-pill);
-  transition: background var(--dur-fast) var(--ease);
+/* 返回提问：结果页里最高频的下一步动作，必须一眼看到 */
+.gl-back {
+  flex-shrink: 0; display: flex; align-items: center; gap: 7px;
+  padding: 9px 16px 9px 12px; border-radius: var(--r-pill);
+  border: 1px solid rgba(92, 225, 230, 0.34);
+  background: rgba(92, 225, 230, 0.09);
+  color: var(--cyan); font-family: inherit; font-size: 13px;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
-.gl-edit:hover { background: var(--cyan-soft); }
+.gl-back:hover { background: rgba(92, 225, 230, 0.17); border-color: var(--cyan-line); }
+.gl-back__icon { width: 14px; height: 14px; }
 
 .gl-section-head {
   display: flex; align-items: flex-end; justify-content: space-between;
@@ -808,16 +814,22 @@ button { font-family: inherit; cursor: pointer; }
 
 /* ---------- 概念图 ---------- */
 .gl-graph {
-  position: relative; width: 1160px; max-width: 100%;
-  height: 500px; margin: 0 auto; overflow: hidden;
+  position: relative;
+  /* 画布尺寸由节点数推导（--gw/--gh 内联注入），不再固定 1160×500 */
+  width: var(--gw, 1160px); max-width: 100%;
+  height: var(--gh, 500px);
+  margin: 0 auto; overflow: hidden;
   transition: opacity 220ms var(--ease);
 }
 .gl-graph.is-fading { opacity: 0; }
 .gl-graph__svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .gl-edge {
   fill: none; stroke: rgba(92, 225, 230, 0.55); stroke-width: 1.5;
-  stroke-dasharray: 700; stroke-dashoffset: 700;
-  animation: gl-draw 1s var(--ease) forwards;
+  /* pathLength=1 归一化之后，虚线长度与真实路径长度无关。
+     否则固定 700 的 dash 放在真实数据那种只有 150px 的短连线上，
+     动画里约 79% 的时间线是空白段 —— 看起来就是"因果链没有绘制动效"。 */
+  stroke-dasharray: 1; stroke-dashoffset: 1;
+  animation: gl-draw 900ms var(--ease) forwards;
   animation-delay: var(--d, 0ms);
 }
 .gl-edge--dashed {
@@ -939,6 +951,51 @@ svg .dim { opacity: 0.15; transition: opacity 300ms var(--ease); }
 .gl-tl-seg:hover { background: rgba(255, 255, 255, 0.18); }
 .gl-tl-seg.on { background: var(--cyan); box-shadow: 0 0 12px rgba(92, 225, 230, 0.5); }
 .gl-tl-seg.on.amber { background: var(--amber); box-shadow: 0 0 12px rgba(255, 184, 107, 0.45); }
+
+/* ---------- 观众预演 · 理解度曲线 ---------- */
+.gl-aud-stat {
+  display: flex; gap: 18px;
+  font-family: var(--font-mono); font-size: 12px; color: var(--ink-faint);
+}
+.gl-aud-stat b { color: var(--cyan); font-weight: 500; }
+.gl-aud {
+  border-radius: var(--r-lg);
+  padding: 22px 24px 24px;
+  display: flex; flex-direction: column; gap: 18px;
+}
+.gl-aud__msg { color: var(--ink-dim); font-size: 13px; padding: 6px 0; }
+.gl-aud__chart { width: 100%; height: auto; display: block; }
+.gl-aud__grid { stroke: rgba(146, 180, 220, 0.14); stroke-width: 1; stroke-dasharray: 3 6; }
+.gl-aud__area { fill: rgba(92, 225, 230, 0.09); stroke: none; }
+.gl-aud__line {
+  fill: none; stroke: var(--cyan); stroke-width: 1.8;
+  stroke-linejoin: round; stroke-linecap: round;
+  /* 与因果链同理：pathLength 归一化，短曲线也能看到完整的绘制过程 */
+  stroke-dasharray: 1; stroke-dashoffset: 1;
+  animation: gl-draw 1.2s var(--ease) 140ms forwards;
+}
+.gl-aud__dot { fill: var(--bg); stroke: var(--cyan); stroke-width: 1.6; }
+.gl-aud__dot.is-worst { fill: var(--amber); stroke: var(--amber); }
+.gl-aud__val {
+  fill: var(--ink-faint); font-family: var(--font-mono); font-size: 10.5px;
+  text-anchor: middle;
+}
+.gl-aud__val.is-worst { fill: var(--amber); }
+.gl-aud__idx {
+  fill: var(--ink-faint); font-family: var(--font-mono); font-size: 10px;
+  text-anchor: middle; opacity: 0.7;
+}
+.gl-aud__notes { display: grid; gap: 10px; }
+.gl-aud__note {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 11px 14px; border-radius: var(--r-sm);
+  background: rgba(146, 180, 220, 0.05);
+  border-left: 2px solid rgba(92, 225, 230, 0.45);
+}
+.gl-aud__note.is-structural { border-left-color: rgba(255, 184, 107, 0.5); }
+.gl-aud__note-head { font-family: var(--font-mono); font-size: 11px; color: var(--cyan); }
+.gl-aud__note.is-structural .gl-aud__note-head { color: var(--amber); }
+.gl-aud__note-body { font-size: 13px; color: var(--ink-dim); line-height: 1.6; }
 
 /* ---------- 可执行提示词 ---------- */
 /* 代码块本就 0.92 近实心，backdrop-filter 毫无收益，纯属浪费合成层 */

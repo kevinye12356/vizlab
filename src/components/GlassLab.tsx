@@ -20,6 +20,7 @@ import {
   type ReactNode,
 } from "react";
 import type {
+  AudienceReport,
   AuditReport,
   ConceptGraph,
   Coverage,
@@ -291,9 +292,25 @@ interface CompileView {
   totalSec: number;
   coverage: Coverage;
   auditScore?: number;
+  /** 概念图画布尺寸（随节点数收紧，避免留白） */
+  gw: number;
+  gh: number;
+  /** 原始领域模型：观众预演接口需要它原样回传 */
+  raw: { graph: ConceptGraph; storyboard: Storyboard };
 }
 
-const ROW_STEP = 328; // 与原设计稿行距一致（24 → 352）
+const ROW_STEP = 328; // 内置示例（8 节点）使用的行距
+/* 真实编译产物通常只有 5~6 个节点。若沿用固定 1160×500 画布与 480px 列距，
+   横向与纵向都会空掉一大片 —— 所以画布尺寸随节点数收紧。 */
+const PAD = 28; // 画布内边距：给悬停发光与连线弧线留空间
+const GAP_X_MAX = 150;
+const GAP_Y = 150;
+
+interface Layout {
+  w: number;
+  h: number;
+  pos: Array<{ x: number; y: number }>;
+}
 
 /* 核验用（由 ?slow= / ?api= 注入，正常使用下就是默认值）：
    slow 让请求人为延后，用来观察「推演中」等待态；
@@ -303,27 +320,32 @@ let DEBUG_API = "/api/compile";
 let DEBUG_SLOW = 0;
 
 /**
- * 在 1160×500 画布内做 serpentine 布局。
- * 行数由「每行最多 4 个」推导，奇数行反向 —— 这样折返边永远落在同一列，
- * 垂直弧线不会被拉斜。整体再垂直居中，避免少量节点时全部挤在顶部。
+ * serpentine 布局：每行最多 4 个，奇数行反向。
+ * 画布宽高由实际占位推导（而不是写死 1160×500），
+ * 这样 5~6 个节点的真实结果不会有半屏空白。
  */
-function layoutOf(count: number): Array<{ x: number; y: number }> {
-  if (count <= 0) return [];
+function layoutOf(count: number): Layout {
+  if (count <= 0) return { w: GRAPH_W, h: 200, pos: [] };
   const rows = Math.max(1, Math.ceil(count / 4));
   const cols = Math.ceil(count / rows);
-  const stepX = cols > 1 ? (GRAPH_W - NODE_W) / (cols - 1) : 0;
-  const contentH = (rows - 1) * ROW_STEP + NODE_H;
-  const y0 = Math.round((GRAPH_H - contentH) / 2);
-  return Array.from({ length: count }, (_, i) => {
+  const gapX = cols > 1 ? Math.min(GAP_X_MAX, (GRAPH_W - cols * NODE_W) / (cols - 1)) : 0;
+  const gapY = rows > 1 ? GAP_Y : 0;
+  const innerW = cols * NODE_W + (cols - 1) * gapX;
+  const innerH = rows * NODE_H + (rows - 1) * gapY;
+  const pos = Array.from({ length: count }, (_, i) => {
     const r = Math.floor(i / cols);
     const k = i % cols;
     const c = r % 2 === 0 ? k : cols - 1 - k;
-    return { x: Math.round(c * stepX), y: y0 + r * ROW_STEP };
+    return {
+      x: Math.round(PAD + c * (NODE_W + gapX)),
+      y: Math.round(PAD + r * (NODE_H + gapY)),
+    };
   });
+  return { w: Math.round(innerW + PAD * 2), h: Math.round(innerH + PAD * 2), pos };
 }
 
-function toNodes(g: ConceptGraph): GNode[] {
-  const pos = layoutOf(g.nodes.length);
+function toNodes(g: ConceptGraph, lay: Layout): GNode[] {
+  const pos = lay.pos;
   // 「缺失环节」= 链条中段那个概念。它承担转场里的情绪峰值，位置由长度推导
   const mid = g.nodes.length >= 3 ? Math.floor((g.nodes.length - 1) / 2) : -1;
   return g.nodes.map((n, i) => ({
@@ -398,9 +420,13 @@ function buildRealTemplate(g: ConceptGraph, sb: Storyboard): string {
 }
 
 function adaptCompile(r: CompileOk): CompileView {
-  const nodes = toNodes(r.graph);
+  const lay = layoutOf(r.graph.nodes.length);
+  const nodes = toNodes(r.graph, lay);
   return {
     nodes,
+    gw: lay.w,
+    gh: lay.h,
+    raw: { graph: r.graph, storyboard: r.storyboard },
     edges: toEdges(r.graph, nodes),
     shots: toShots(r.storyboard),
     chain: toChain(nodes),
@@ -448,6 +474,36 @@ function edgePath(e: GEdge, nodes: GNode[]): string {
   const x2 = b.x + NODE_W;
   const mx = (x1 + x2) / 2;
   return `M ${x1} ${ay} C ${mx} ${ay}, ${mx} ${by}, ${x2} ${by}`;
+}
+
+/* ================= 观众预演 · 理解度曲线 ================= */
+
+const CH_W = 920; // 曲线画布（viewBox 坐标，实际按容器宽度等比缩放）
+const CH_H = 180;
+const CH_PX = 38; // 左右留白，给首末镜的标签
+const CH_PY = 26;
+
+interface ChartPoint {
+  x: number;
+  y: number;
+  i: number;
+  probe: AudienceReport["probes"][number];
+}
+
+/** x 按镜序均分，y 把 0~100 的理解度映射到画布高度 */
+function chartPoints(probes: AudienceReport["probes"]): ChartPoint[] {
+  const n = probes.length;
+  const innerW = CH_W - CH_PX * 2;
+  const innerH = CH_H - CH_PY * 2;
+  return probes.map((probe, i) => {
+    const v = Math.max(0, Math.min(100, probe.comprehension));
+    return {
+      probe,
+      i,
+      x: CH_PX + (n <= 1 ? innerW / 2 : (i * innerW) / (n - 1)),
+      y: CH_PY + (1 - v / 100) * innerH,
+    };
+  });
 }
 
 /* ================= 提示词模板 ================= */
@@ -520,6 +576,10 @@ export default function GlassLab() {
   const [pending, setPending] = useState(false);
   /* 拍二已演完、模型还没回：页脚改说「推演中」，别让用户对着空槽干等 */
   const [waiting, setWaiting] = useState(false);
+  /* 观众预演：结果页出现后再单独跑（它自己也要一次模型调用），不挡结果页 */
+  const [audience, setAudience] = useState<AudienceReport | null>(null);
+  const [audPending, setAudPending] = useState(false);
+  const [audErr, setAudErr] = useState<string | null>(null);
 
   const [abstraction, setAbstraction] = useState<Abstraction>(1);
   const [absFade, setAbsFade] = useState(false);
@@ -546,6 +606,7 @@ export default function GlassLab() {
   const advancedRef = useRef(false);
   const skipWantedRef = useRef(false);
   const reqIdRef = useRef(0);
+  const audIdRef = useRef(0);
   /* 转场用：记下"你的词"在句子里的原始几何，以及编译台槽位的 DOM，
      用来算出 token 的起点位移（否则它只会从槽位正上方落下） */
   const userRects = useRef<{ condition?: DOMRect; phenomenon?: DOMRect }>({});
@@ -625,6 +686,48 @@ export default function GlassLab() {
     phaseRef.current = phase;
   }, [phase]);
 
+  /* 观众预演：进入结果页之后才发起，避免和编译抢那一次模型调用。
+     失败不影响结果页 —— 它只是附加的一次质检。 */
+  useEffect(() => {
+    if (phase !== "result" || !compiled) return;
+    const id = ++audIdRef.current;
+    setAudience(null);
+    setAudErr(null);
+    setAudPending(true);
+    void (async () => {
+      try {
+        const res = await fetch("/api/audience", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(compiled.raw),
+        });
+        if (id !== audIdRef.current) return;
+        const data = (await res.json()) as {
+          ok: boolean;
+          report?: AudienceReport;
+          message?: string;
+        };
+        if (!res.ok || !data.ok || !data.report) {
+          setAudErr(data.message || "观众预演没能完成。");
+        } else {
+          setAudience(data.report);
+        }
+      } catch {
+        if (id === audIdRef.current) setAudErr("观众预演服务暂时不可用。");
+      } finally {
+        if (id === audIdRef.current) setAudPending(false);
+      }
+    })();
+  }, [phase, compiled]);
+
+  /* 核验用：?to=<id> 在观众预演数据到位后把该区块滚进视口。
+     headless 截图只能拍视口，不滚就永远验不到下半页。 */
+  useEffect(() => {
+    if (!audience) return;
+    const to = new URLSearchParams(window.location.search).get("to");
+    if (to) document.getElementById(to)?.scrollIntoView({ block: "start" });
+  }, [audience]);
+
   /* 结果页 / 转场的数据源：真实编译产物优先。
      未编译时（首屏）回落到内置示例 —— 首屏本来就不显示这些内容，
      回落只为保证任何中间态都渲染得出来，不会白屏。 */
@@ -633,6 +736,20 @@ export default function GlassLab() {
   const shots = compiled?.shots ?? SHOTS;
   const chain = compiled?.chain ?? CHAIN;
   const totalSec = compiled?.totalSec ?? 38;
+  /* 概念图画布尺寸：真实数据随节点数收紧；内置示例沿用原设计稿尺寸 */
+  const graphW = compiled?.gw ?? GRAPH_W;
+  const graphH = compiled?.gh ?? GRAPH_H;
+  /* 观众预演派生量。shotIndex 是 0-based（后端 Shot.index 口径），显示时 +1 */
+  const audAvg =
+    audience && audience.probes.length
+      ? Math.round(audience.probes.reduce((s, p) => s + p.comprehension, 0) / audience.probes.length)
+      : null;
+  const audWeak = audience
+    ? [...audience.probes]
+        .filter((p) => p.comprehension < 70)
+        .sort((a, b) => a.comprehension - b.comprehension)
+        .slice(0, 3)
+    : [];
 
   /* ---------- 编译：真实请求 + 转场编排 ---------- */
 
@@ -959,28 +1076,41 @@ export default function GlassLab() {
   };
 
   /* 拖拽回弹 */
+  /* 门槛原先卡在 1241px（跟结果页 max-width 同值），
+     在 1280 窗口 + 浏览器缩放、或小屏笔电上就直接拖不动了。
+     改成与移动端断点一致 —— 只要概念图还是绝对定位布局就允许拖。 */
   const canDrag = () =>
-    typeof window !== "undefined" && window.matchMedia("(min-width: 1241px)").matches;
+    typeof window !== "undefined" && window.matchMedia("(min-width: 961px)").matches;
 
   const onNodeDown = (e: React.PointerEvent<HTMLElement>, id: string) => {
     if (!canDrag()) return;
     dragStart.current = { x: e.clientX, y: e.clientY };
-    e.currentTarget.setPointerCapture(e.pointerId);
     setDrag({ id, dx: 0, dy: 0, active: true });
   };
-  const onNodeMove = (e: React.PointerEvent<HTMLElement>, id: string) => {
-    if (!dragStart.current || drag?.id !== id || !drag.active) return;
-    setDrag({
-      id,
-      dx: e.clientX - dragStart.current.x,
-      dy: e.clientY - dragStart.current.y,
-      active: true,
-    });
-  };
-  const onNodeUp = () => {
-    dragStart.current = null;
-    setDrag((d) => (d ? { ...d, active: false } : null));
-  };
+
+  /* 拖动过程挂在 window 上监听：只靠节点自身的 pointermove，
+     指针一离开节点就会中断（捕获在部分浏览器/缩放下也不可靠），
+     表现出来就是"拖拽没反应"。 */
+  useEffect(() => {
+    if (!drag?.active) return;
+    const move = (e: PointerEvent) => {
+      const s = dragStart.current;
+      if (!s) return;
+      setDrag((d) => (d ? { ...d, dx: e.clientX - s.x, dy: e.clientY - s.y } : d));
+    };
+    const up = () => {
+      dragStart.current = null;
+      setDrag((d) => (d ? { ...d, active: false } : null));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  }, [drag?.active]);
 
   /* 分镜 / 时间轴双向联动 */
   const selectShot = (i: number, fromTimeline = false) => {
@@ -1052,7 +1182,12 @@ export default function GlassLab() {
      而不是停在「拆解」让用户以为卡住了。 */
   const beatLabel = waiting && stage <= 2 ? stageNames[3] : stageNames[stage];
   const d = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
-  const template = useMemo(() => buildTemplate(compiledQuestion), [compiledQuestion]);
+  /* 有真实编译产物就用它生成的模板 —— 否则提示词里的「核心机制」会一直是
+     写死的那条链，跟用户问的问题完全没关系。 */
+  const template = useMemo(
+    () => compiled?.prompt ?? buildTemplate(compiledQuestion),
+    [compiled, compiledQuestion],
+  );
   /* 识别不到条件/现象时的兜底两段（见 splitSentence） */
   const [fbA, fbB] = useMemo(() => splitSentence(compiledQuestion), [compiledQuestion]);
 
@@ -1164,10 +1299,22 @@ export default function GlassLab() {
 
           {/* FLIP 目标：输入台缩至顶部 */}
           <div ref={barRef} className="glass gl-topbar">
-            <span className="gl-topbar__text">{compiledQuestion}</span>
-            <button className="gl-edit" onClick={backToEdit}>
-              已编译 · 可再次编辑
+            {/* 返回入口原先是一句淡青小字「已编译 · 可再次编辑」，几乎看不见。
+                改成带箭头的明确按钮 —— 用户看完结果的第一件事往往就是再问一个。 */}
+            <button type="button" className="gl-back" onClick={backToEdit}>
+              <svg className="gl-back__icon" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M10 3.5 5.5 8 10 12.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              重新提问
             </button>
+            <span className="gl-topbar__text">{compiledQuestion}</span>
           </div>
 
           <main className="gl-result">
@@ -1205,8 +1352,17 @@ export default function GlassLab() {
                 </div>
               </div>
 
-              <div className={`glass gl-graph${absFade ? " is-fading" : ""}`}>
-                <svg className="gl-graph__svg" viewBox={`0 0 ${GRAPH_W} ${GRAPH_H}`} aria-hidden="true">
+              <div
+                className={`glass gl-graph${absFade ? " is-fading" : ""}`}
+                /* 用 CSS 变量而非内联 width/height：媒体查询里的
+                   「移动端占满宽度」规则才覆盖得掉 */
+                style={{ ["--gw" as string]: `${graphW}px`, ["--gh" as string]: `${graphH}px` }}
+              >
+                <svg
+                  className="gl-graph__svg"
+                  viewBox={`0 0 ${graphW} ${graphH}`}
+                  aria-hidden="true"
+                >
                   {edges.map((e, i) => {
                     const dpath = edgePath(e, nodes);
                     const dim = edgeDim(e);
@@ -1214,6 +1370,7 @@ export default function GlassLab() {
                       <g key={`${e.from}-${e.to}`} className={dim ? "dim" : ""}>
                         <path
                           d={dpath}
+                          pathLength={1}
                           className={`gl-edge${e.dashed ? " gl-edge--dashed" : ""}${e.amber ? " gl-edge--amber" : ""}`}
                           style={d(i * 90)}
                         />
@@ -1270,8 +1427,6 @@ export default function GlassLab() {
                             : undefined,
                       }}
                       onPointerDown={(e) => onNodeDown(e, n.id)}
-                      onPointerMove={(e) => onNodeMove(e, n.id)}
-                      onPointerUp={onNodeUp}
                       onPointerEnter={() => !n.bypass && setHover(n.id)}
                       onPointerLeave={() => setHover(null)}
                       onFocus={() => !n.bypass && setHover(n.id)}
@@ -1337,6 +1492,135 @@ export default function GlassLab() {
                     title={`${s.no} · ${s.type} · ${s.dur}s`}
                   />
                 ))}
+              </div>
+            </section>
+
+            {/* 观众预演 · 理解度曲线 */}
+            <section className="reveal" id="audience" style={d(150)}>
+              <div className="gl-section-head">
+                <div>
+                  <h2>
+                    观众预演 · <b>理解度曲线</b>
+                  </h2>
+                  <p className="gl-sub">按目标观众走一遍分镜 · 标出最容易掉队的那一镜</p>
+                </div>
+                {audAvg !== null && (
+                  <div className="gl-aud-stat">
+                    <span>
+                      平均 <b>{audAvg}</b>
+                    </span>
+                    <span>
+                      收束 <b>{audience?.endingComprehension}</b>
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="glass gl-aud">
+                {audPending ? (
+                  <p className="gl-aud__msg">正在按目标观众预演每一镜…</p>
+                ) : audErr ? (
+                  <p className="gl-aud__msg">{audErr}</p>
+                ) : audience && audience.probes.length > 0 ? (
+                  <>
+                    <svg
+                      className="gl-aud__chart"
+                      viewBox={`0 0 ${CH_W} ${CH_H}`}
+                      role="img"
+                      aria-label={`各镜理解度：${audience.probes
+                        .map((p, i) => `第${i + 1}镜 ${p.comprehension}`)
+                        .join("，")}`}
+                    >
+                      {[25, 50, 75].map((v) => {
+                        const y = CH_PY + (1 - v / 100) * (CH_H - CH_PY * 2);
+                        return (
+                          <line
+                            key={v}
+                            className="gl-aud__grid"
+                            x1={CH_PX}
+                            x2={CH_W - CH_PX}
+                            y1={y}
+                            y2={y}
+                          />
+                        );
+                      })}
+                      {(() => {
+                        const pts = chartPoints(audience.probes);
+                        const line = pts.map((q, i) => `${i === 0 ? "M" : "L"} ${q.x} ${q.y}`).join(" ");
+                        const base = CH_H - CH_PY;
+                        return (
+                          <>
+                            <path
+                              className="gl-aud__area"
+                              d={`${line} L ${pts[pts.length - 1].x} ${base} L ${pts[0].x} ${base} Z`}
+                            />
+                            <path className="gl-aud__line" d={line} pathLength={1} />
+                            {pts.map((q) => {
+                              const worst = q.probe.shotIndex === audience.worstShot;
+                              return (
+                                <g key={q.i}>
+                                  <circle
+                                    className={`gl-aud__dot${worst ? " is-worst" : ""}`}
+                                    cx={q.x}
+                                    cy={q.y}
+                                    r={worst ? 5 : 3.2}
+                                  />
+                                  <text
+                                    className={`gl-aud__val${worst ? " is-worst" : ""}`}
+                                    x={q.x}
+                                    y={q.y - 12}
+                                  >
+                                    {q.probe.comprehension}
+                                  </text>
+                                  <text className="gl-aud__idx" x={q.x} y={CH_H - 6}>
+                                    {String(q.i + 1).padStart(2, "0")}
+                                  </text>
+                                </g>
+                              );
+                            })}
+                          </>
+                        );
+                      })()}
+                    </svg>
+
+                    {(audWeak.length > 0 || audience.notes.length > 0) && (
+                      <div className="gl-aud__notes">
+                        {audWeak.map((p) => (
+                          <div key={`w${p.shotIndex}`} className="gl-aud__note">
+                            <span className="gl-aud__note-head">
+                              第 {p.shotIndex + 1} 镜 · {p.conceptName} · 理解度 {p.comprehension}
+                            </span>
+                            <span className="gl-aud__note-body">{p.stuck || p.patch || "这一镜容易掉队"}</span>
+                          </div>
+                        ))}
+                        {audience.notes.slice(0, 2).map((n) => (
+                          <div key={n.id} className="gl-aud__note is-structural">
+                            <span className="gl-aud__note-head">
+                              第 {n.shotIndex + 1} 镜 · {n.title}
+                            </span>
+                            <span className="gl-aud__note-body">{n.detail}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : audience ? (
+                  <>
+                    <p className="gl-aud__msg">
+                      这次只跑到确定性检查（未启用观众模型）。以下是从分镜结构直接推出来的提示：
+                    </p>
+                    <div className="gl-aud__notes">
+                      {audience.notes.slice(0, 4).map((n) => (
+                        <div key={n.id} className="gl-aud__note is-structural">
+                          <span className="gl-aud__note-head">
+                            第 {n.shotIndex + 1} 镜 · {n.title}
+                          </span>
+                          <span className="gl-aud__note-body">{n.detail}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : null}
               </div>
             </section>
 
