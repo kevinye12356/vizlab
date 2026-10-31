@@ -246,7 +246,11 @@ button { font-family: inherit; cursor: pointer; }
   padding: 8px 16px; border-radius: var(--r-pill);
   font-family: var(--font-mono); font-size: 12px; color: var(--ink-dim);
 }
-.gl-hero { text-align: center; padding: 12vh 24px var(--gap-hero-input); }
+/* hero 与 desk-zone 构成一个整体视觉组，用上下 auto 外边距在
+   「nav 下方 → 视口底」之间居中：既保住组内 48px / 20px 的精确间距，
+   又不让整组被顶到上半屏、在下方留一大片空白。
+   顶部不再用固定 12vh——固定值在不同屏高下会把焦点顶偏。 */
+.gl-hero { text-align: center; padding: 0 24px var(--gap-hero-input); margin-top: auto; }
 .gl-hero h1 {
   font-size: clamp(26px, 4.2vw, 46px); font-weight: 300;
   letter-spacing: 0.02em; line-height: 1.35;
@@ -258,14 +262,15 @@ button { font-family: inherit; cursor: pointer; }
    首页 · 玻璃输入台
    ============================================================ */
 .gl-desk-zone {
-  flex: 1; display: flex; flex-direction: column;
+  /* 与 hero 组成中心视觉组，由两者各自的 auto 外边距平分剩余空间实现居中。
+     不再用 flex:1 + 顶端对齐（那会把整组压在上半屏）。
+     底部不再留固定 56px，改为 auto——否则组会被顶高、下空白重新出现。 */
+  display: flex; flex-direction: column;
   align-items: center;
-  /* 不再垂直居中：改为自标题向下排布，
-     让"副标题 → 输入台 48px / 输入台 → 选项条 20px"可被精确控制，
-     形成紧凑的中心视觉组。 */
   justify-content: flex-start;
-  padding: 0 24px 56px;
+  padding: 0 24px;
   gap: var(--gap-input-options);
+  margin-bottom: auto;
 }
 .gl-desk {
   width: min(720px, 100%);
@@ -964,7 +969,9 @@ svg .dim { opacity: 0.15; transition: opacity 300ms var(--ease); }
   .aurora__blob { opacity: 0.7; }
   .gl-opts { gap: 14px; }
   .gl-result { padding: 20px 20px 80px; gap: 48px; }
-  .gl-hero { padding-top: 5vh; }
+  /* 居中由 .gl-hero 的 margin-top:auto 负责；这里只给一个最小呼吸，
+     不能再用固定 5vh——否则会叠加在 auto 外边距之上把组推偏。 */
+  .gl-hero { padding-top: 10px; }
 }
 @media (max-width: 560px) {
   .gl-shots { grid-template-columns: 1fr; }
