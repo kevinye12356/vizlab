@@ -30,7 +30,6 @@ import type {
 
 /* ================= 类型 ================= */
 
-type MotionMode = "full" | "simple";
 type Phase = "landing" | "compiling" | "result" | "error";
 type Abstraction = 0 | 1 | 2;
 type Mark = "qt" | "cond" | "phen";
@@ -633,7 +632,6 @@ function materialize(
 export default function GlassLab() {
   const [phase, setPhase] = useState<Phase>("landing");
   const [stage, setStage] = useState<Stage>(0);
-  const [motion, setMotion] = useState<MotionMode>("full");
 
   const [text, setText] = useState("");
   const [rec, setRec] = useState<Recognition | null>(null);
@@ -698,42 +696,9 @@ export default function GlassLab() {
   const userRects = useRef<{ condition?: DOMRect; phenomenon?: DOMRect }>({});
   const chipRefs = useRef<Array<HTMLDivElement | null>>([]);
 
-  /* ---------- 动效开关：localStorage + prefers-reduced-motion ---------- */
-  /* autoSimple = "因为系统偏好被自动设为简化"。它只做默认值，且必须在界面上
-     明确告诉用户、并给一键升级 —— 否则用户看到的是"动效没做"，却不知道
-     根因是自己的系统设置（这个默认值一旦写进 localStorage 就会粘死）。 */
-  const [autoSimple, setAutoSimple] = useState(false);
-  const chooseMotion = (m: MotionMode) => {
-    setAutoSimple(false);
-    setMotion(m);
-  };
-
-  useEffect(() => {
-    let stored: string | null = null;
-    try {
-      stored = localStorage.getItem("vizlab-motion-v2");
-    } catch { /* 忽略 */ }
-    if (stored === "full" || stored === "simple") {
-      setMotion(stored);
-      return;
-    }
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setMotion("simple");
-      setAutoSimple(true);
-    }
-  }, []);
-  useEffect(() => {
-    document.documentElement.dataset.motion = motion;
-    /* 只持久化"用户明确选过"的状态 */
-    if (autoSimple) return;
-    try {
-      localStorage.setItem("vizlab-motion-v2", motion);
-    } catch { /* 忽略 */ }
-  }, [motion, autoSimple]);
-
   /* ---------- 打字机占位轮播（聚焦停止） ---------- */
   useEffect(() => {
-    if (focused || phase !== "landing" || motion === "simple") {
+    if (focused || phase !== "landing") {
       setPlaceholder(EXAMPLE);
       return;
     }
@@ -757,7 +722,7 @@ export default function GlassLab() {
     };
     timer = window.setTimeout(step, 500);
     return () => window.clearTimeout(timer);
-  }, [focused, phase, motion]);
+  }, [focused, phase]);
 
   /* ---------- 实时识别（防抖 300ms） ---------- */
   useEffect(() => {
@@ -1149,13 +1114,6 @@ export default function GlassLab() {
        以为「这网站只会回答天一冷想尿尿」。 */
     const p = debugParams();
     if (!p) return;
-    /* ?motion=full|simple 强制指定动效模式 —— 必须能在核验时绕开
-       localStorage 与系统偏好，否则 headless（默认报告 reduce）永远验的是简化模式。 */
-    const forceMotion = p.get("motion");
-    if (forceMotion === "full" || forceMotion === "simple") {
-      setAutoSimple(false);
-      setMotion(forceMotion);
-    }
     const n = Number(p.get("freeze"));
     const auto = p.get("auto") === "1";
     DEBUG_SLOW = Number(p.get("slow") || 0) || 0;
@@ -1217,7 +1175,7 @@ export default function GlassLab() {
     if (phase !== "result" || !barRef.current) return;
     const bar = barRef.current;
     const from = deskRect.current;
-    if (!from || motion === "simple") return;
+    if (!from) return;
     const to = bar.getBoundingClientRect();
     const dx = from.left - to.left;
     const dy = from.top - to.top;
@@ -1230,7 +1188,7 @@ export default function GlassLab() {
         bar.style.transform = "";
       });
     });
-  }, [phase, motion]);
+  }, [phase]);
 
   /* ---------- 交互处理 ---------- */
   /* 抽象档是 radiogroup，必须支持方向键 + roving tabindex。
@@ -1278,10 +1236,6 @@ export default function GlassLab() {
 
   const switchAbs = (n: Abstraction) => {
     if (n === abstraction) return;
-    if (motion === "simple") {
-      setAbstraction(n);
-      return;
-    }
     setAbsFade(true);
     window.setTimeout(() => {
       setAbstraction(n);
@@ -1372,7 +1326,7 @@ export default function GlassLab() {
     setActiveShot(i);
     if (fromTimeline) {
       shotRefs.current[i]?.scrollIntoView({
-        behavior: motion === "full" ? "smooth" : "auto",
+        behavior: "smooth",
         block: "nearest",
       });
     }
@@ -1558,23 +1512,6 @@ export default function GlassLab() {
               <span className="gl-brand__mark">VIZLAB</span>
               <span className="gl-brand__sub">提示词编译台 · PROMPT COMPILER</span>
             </div>
-            {/* 右侧三项收进同一个容器：原先它们直接挂在 .gl-nav 下，
-                再加一项就挤成四段；收成一个弹性组后，窄屏才能整组换行。 */}
-            <div className="gl-nav__side">
-              <div className="gl-motion" role="group" aria-label="动效强度">
-                <button className={motion === "full" ? "on" : ""} aria-pressed={motion === "full"} onClick={() => chooseMotion("full")}>
-                  <span className="gl-motion__prefix">动效：</span>完整
-                </button>
-                <button className={motion === "simple" ? "on" : ""} aria-pressed={motion === "simple"} onClick={() => chooseMotion("simple")}>
-                  简化
-                </button>
-              </div>
-              {autoSimple && motion === "simple" && (
-                <button type="button" className="gl-motion-hint" onClick={() => chooseMotion("full")}>
-                  已按系统偏好简化 · 点此开启完整动效
-                </button>
-              )}
-            </div>
           </header>
 
           {/* FLIP 目标：输入台缩至顶部 */}
@@ -1681,7 +1618,7 @@ export default function GlassLab() {
                           className={`gl-edge${e.dashed ? " gl-edge--dashed" : ""}${e.amber ? " gl-edge--amber" : ""}${live ? " is-live" : ""}`}
                           style={d(i * 90)}
                         />
-                        {motion === "full" && !e.dashed && !dim && (
+                        {!e.dashed && !dim && (
                           <circle r="3" className="gl-dot">
                             <animateMotion dur="3s" repeatCount="indefinite" path={dpath} />
                           </circle>
@@ -2044,21 +1981,6 @@ export default function GlassLab() {
             <div className="gl-brand">
               <span className="gl-brand__mark">VIZLAB</span>
               <span className="gl-brand__sub">提示词编译台 · PROMPT COMPILER</span>
-            </div>
-            <div className="gl-nav__side">
-              <div className="gl-motion" role="group" aria-label="动效强度">
-                <button className={motion === "full" ? "on" : ""} aria-pressed={motion === "full"} onClick={() => chooseMotion("full")}>
-                  <span className="gl-motion__prefix">动效：</span>完整
-                </button>
-                <button className={motion === "simple" ? "on" : ""} aria-pressed={motion === "simple"} onClick={() => chooseMotion("simple")}>
-                  简化
-                </button>
-              </div>
-              {autoSimple && motion === "simple" && (
-                <button type="button" className="gl-motion-hint" onClick={() => chooseMotion("full")}>
-                  已按系统偏好简化 · 点此开启完整动效
-                </button>
-              )}
             </div>
           </header>
 

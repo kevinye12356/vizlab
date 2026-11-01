@@ -253,9 +253,6 @@ button { font-family: inherit; cursor: pointer; }
 }
 /* 结果页的导航已经在 .gl-result-wrap 的容器内，不能再叠一层边距 */
 .gl-result-wrap .gl-nav { max-width: none; padding-left: 0; padding-right: 0; }
-/* 导航右侧整组：动效 / 提示。
-   收进一个容器之后才可能在窄屏整组换行，否则每多一项就多咬掉品牌一格。 */
-.gl-nav__side { display: flex; align-items: center; gap: 12px; min-width: 0; }
 /* 标题里不允许被拆开的片段（如「科普视频」）：中文没有空格，
    浏览器默认可在任意字间断行，390px 下曾把「科普」拆成两行。 */
 .gl-nb { white-space: nowrap; }
@@ -639,43 +636,6 @@ button { font-family: inherit; cursor: pointer; }
   background: rgba(146, 180, 220, 0.1); color: var(--ink-faint);
 }
 
-/* ============================================================
-   简化动效（reduced-motion）
-   去掉一切位移，但**保留"你的词 → 概念"的语义替换**。
-   原先这里把 .gl-tchip__user 直接 display:none，等于连内容一起丢了 ——
-   被系统偏好判为简化的用户，永远看不到"我的话被抽成概念"这一步，
-   只会觉得"这网站没动效"。位移可以去掉，信息不能去掉。
-   ============================================================ */
-[data-motion="simple"] .is-scan .gl-tchip { animation: none; opacity: 1; }
-/* 与完整模式同构：拍二只淡入"你的词"并停住，拍三才换成概念 */
-[data-motion="simple"] .is-split .gl-tchip__user { animation: tuser-fade 900ms linear both; }
-[data-motion="simple"] .is-split .gl-tchip--phen .gl-tchip__user { animation-delay: 100ms; }
-@keyframes tuser-fade {
-  0% { opacity: 0; }
-  18% { opacity: 1; }
-  100% { opacity: 1; }
-}
-[data-motion="simple"] .is-recombine .gl-tchip--mid .gl-tchip__node,
-[data-motion="simple"] .is-recombine .gl-tchip--star .gl-tchip__node,
-[data-motion="simple"] .is-unfold .gl-tchip--mid .gl-tchip__node,
-[data-motion="simple"] .is-unfold .gl-tchip--star .gl-tchip__node {
-  animation: tnode-in 420ms linear both; opacity: 1; color: var(--ink);
-}
-[data-motion="simple"] .is-recombine .gl-tchip--star .gl-tchip__node,
-[data-motion="simple"] .is-unfold .gl-tchip--star .gl-tchip__node { color: var(--cyan); }
-[data-motion="simple"] .is-recombine .gl-tchip--star,
-[data-motion="simple"] .is-unfold .gl-tchip--star { animation: none; opacity: 1; filter: none; }
-[data-motion="simple"] .is-recombine .gl-tedge,
-[data-motion="simple"] .is-unfold .gl-tedge {
-  animation: tnode-in 380ms linear both; transform: scaleX(1);
-}
-[data-motion="simple"] .is-recombine .gl-tedge--2 { animation-delay: 200ms; }
-[data-motion="simple"] .is-recombine .gl-tedge--3 { animation-delay: 400ms; }
-[data-motion="simple"] .is-scan .gl-mark--qt { animation: none; opacity: 0.3; }
-[data-motion="simple"] .is-split .gl-mark--cond,
-[data-motion="simple"] .is-split .gl-mark--phen { animation: tmark-lift 400ms linear both 60ms; }
-[data-motion="simple"] .is-split .gl-mark--phen { animation-delay: 220ms; }
-
 /* 阶段说明 / 实时识别 */
 /* 阶段说明：视觉状态由编译台页脚承担；
    本行保留为读屏的 aria-live 通道、不占版面（否则选项条间距被撑开）。 */
@@ -707,7 +667,7 @@ button { font-family: inherit; cursor: pointer; }
 .gl-chip--phen { color: var(--teal); border-color: rgba(127, 231, 217, 0.35); }
 .gl-rec__hint { color: var(--ink-ghost); font-size: 13px; }
 
-/* 选项条 / 动效开关 */
+/* 选项条 */
 .gl-opts { display: flex; gap: 26px; flex-wrap: wrap; justify-content: center; }
 .gl-opt-group { display: flex; align-items: center; gap: 10px; }
 .gl-opt-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.2em; color: var(--ink-faint); }
@@ -725,34 +685,6 @@ button { font-family: inherit; cursor: pointer; }
 }
 .gl-cap:hover { color: var(--ink); }
 .gl-cap.on { color: var(--cyan); background: var(--cyan-soft); border-color: rgba(92, 225, 230, 0.4); }
-
-.gl-motion {
-  display: flex; align-items: center; gap: 4px; padding: 3px;
-  border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-.gl-motion button {
-  padding: 4px 12px; border: 0; border-radius: var(--r-pill);
-  background: transparent; color: var(--ink-faint);
-  font-family: var(--font-mono); font-size: 11px;
-  /* 不加这一行，窄屏下这个按钮会被挤成「动/效/：/完/整」的竖排单字 */
-  white-space: nowrap;
-  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
-}
-.gl-motion button.on { color: var(--ink); background: rgba(255, 255, 255, 0.08); }
-
-/* 因系统偏好被自动简化时的提示 —— 让用户知道动效为什么没播。
-   用冷青而非琥珀：琥珀按规范只留给编译按钮与结果终点。 */
-.gl-motion-hint {
-  padding: 7px 14px; border-radius: var(--r-pill);
-  border: 1px solid rgba(92, 225, 230, 0.45);
-  background: rgba(92, 225, 230, 0.12);
-  color: var(--cyan);
-  font-size: 11px; letter-spacing: 0.02em;
-  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
-}
-.gl-motion-hint:hover { background: rgba(92, 225, 230, 0.22); border-color: var(--cyan); }
 
 /* 背景漂浮示例卡 */
 .gl-floats { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
@@ -1130,19 +1062,6 @@ svg .dim { opacity: 0.15; transition: opacity 300ms var(--ease); }
 @keyframes gl-tick { to { stroke-dashoffset: 0; } }
 
 /* ============================================================
-   动效简化模式（保留淡入与连线，去掉粒子/扫描/飞行/漂移）
-   ============================================================ */
-[data-motion="simple"] .aurora__blob { animation: none; }
-/* 等待占位在简化模式下不呼吸，但仍保留占位本身 ——
-   去掉的是动，不是「这一格还空着」这个信息。 */
-[data-motion="simple"] .gl-tchip__wait > i { animation: none; opacity: 0.4; }
-[data-motion="simple"] .gl-dot { display: none; }
-[data-motion="simple"] .gl-edge { animation: none; stroke-dashoffset: 0; }
-[data-motion="simple"] .gl-node--missing { animation: none; }
-[data-motion="simple"] .reveal { transform: none; }
-[data-motion="simple"] .gl-float-card { animation: none; }
-
-/* ============================================================
    响应式
    ============================================================ */
 /* 概念图降级为竖向列表的断点。
@@ -1195,16 +1114,8 @@ svg .dim { opacity: 0.15; transition: opacity 300ms var(--ease); }
   .gl-compile { width: 88px; height: 52px; font-size: 13px; }
   .gl-input, .gl-mirror { font-size: 15px; padding: 15px 14px; }
 
-  /* 导航：390 下原先挤成三处畸形 ——
-     品牌折成两行、动效开关压成「动/效/：/完/整」竖排单字、
-     琥珀提示被挤成贴右边缘的一列竖排字。
-     改法：品牌只留字标；右侧整组允许换行并对齐到右；提示独占自己一行。 */
+  /* 导航：390 下品牌会折成两行 —— 只留字标，副标题隐藏。 */
   .gl-nav { padding: 16px var(--gutter-x); flex-wrap: wrap; row-gap: 10px; }
   .gl-brand__sub { display: none; }
   .gl-brand__mark { white-space: nowrap; }
-  .gl-nav__side { gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-  .gl-motion__prefix { display: none; }
-  .gl-motion button { padding: 4px 10px; }
-  /* 提示不再挤在横排里，而是整行居中；允许折成两行，但绝不允许一个字一行 */
-  .gl-motion-hint { flex: 1 0 100%; text-align: center; white-space: normal; }
 }
