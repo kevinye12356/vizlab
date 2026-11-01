@@ -253,7 +253,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 /* 结果页的导航已经在 .gl-result-wrap 的容器内，不能再叠一层边距 */
 .gl-result-wrap .gl-nav { max-width: none; padding-left: 0; padding-right: 0; }
-/* 导航右侧整组：目标模型 / 动效 / 提示。
+/* 导航右侧整组：动效 / 提示。
    收进一个容器之后才可能在窄屏整组换行，否则每多一项就多咬掉品牌一格。 */
 .gl-nav__side { display: flex; align-items: center; gap: 12px; min-width: 0; }
 /* 标题里不允许被拆开的片段（如「科普视频」）：中文没有空格，
@@ -268,10 +268,6 @@ button { font-family: inherit; cursor: pointer; }
   letter-spacing: 0.18em; font-size: 21px; line-height: 1.1; color: var(--ink);
 }
 .gl-brand__sub { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.2em; color: var(--ink-faint); }
-.gl-pill {
-  padding: 8px 16px; border-radius: var(--r-pill);
-  font-family: var(--font-mono); font-size: 13px; color: var(--ink-dim);
-}
 /* hero 与 desk-zone 构成一个整体视觉组，用上下 auto 外边距在
    「nav 下方 → 视口底」之间居中：既保住组内 48px / 20px 的精确间距，
    又不让整组被顶到上半屏、在下方留一大片空白。
@@ -1207,7 +1203,6 @@ svg .dim { opacity: 0.15; transition: opacity 300ms var(--ease); }
   .gl-brand__sub { display: none; }
   .gl-brand__mark { white-space: nowrap; }
   .gl-nav__side { gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-  .gl-pill { padding: 6px 11px; }
   .gl-motion__prefix { display: none; }
   .gl-motion button { padding: 4px 10px; }
   /* 提示不再挤在横排里，而是整行居中；允许折成两行，但绝不允许一个字一行 */

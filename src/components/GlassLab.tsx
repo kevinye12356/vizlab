@@ -188,7 +188,9 @@ const CHAIN: ChainItem[] = [
 
 const FLOATS = [
   { t: "为什么海水是咸的？", x: 4, y: 17, r: -4, d: 0 },
-  { t: "为什么猫打呼噜？", x: 83, y: 11, r: 3, d: -3 },
+  /* y 从 11% 下移到 22%：11% 时这张卡正好落在导航右侧「动效/提示」的下方，
+     和琥珀提示叠在一起（浮卡在内容层之下，看起来就是文字压在卡上）。 */
+  { t: "为什么猫打呼噜？", x: 83, y: 22, r: 3, d: -3 },
   { t: "为什么冰是滑的？", x: 3, y: 62, r: 3, d: -6 },
   { t: "为什么越熬夜越精神？", x: 84, y: 56, r: -3, d: -1.5 },
   { t: "抗生素为什么要吃满疗程？", x: 9, y: 86, r: -2, d: -8 },
@@ -1546,7 +1548,6 @@ export default function GlassLab() {
             {/* 右侧三项收进同一个容器：原先它们直接挂在 .gl-nav 下，
                 再加一项就挤成四段；收成一个弹性组后，窄屏才能整组换行。 */}
             <div className="gl-nav__side">
-              <div className="gl-pill glass">目标模型：Opus 5.5</div>
               <div className="gl-motion" role="group" aria-label="动效强度">
                 <button className={motion === "full" ? "on" : ""} aria-pressed={motion === "full"} onClick={() => chooseMotion("full")}>
                   <span className="gl-motion__prefix">动效：</span>完整
@@ -2032,7 +2033,6 @@ export default function GlassLab() {
               <span className="gl-brand__sub">提示词编译台 · PROMPT COMPILER</span>
             </div>
             <div className="gl-nav__side">
-              <div className="gl-pill glass">目标模型：Opus 5.5</div>
               <div className="gl-motion" role="group" aria-label="动效强度">
                 <button className={motion === "full" ? "on" : ""} aria-pressed={motion === "full"} onClick={() => chooseMotion("full")}>
                   <span className="gl-motion__prefix">动效：</span>完整
