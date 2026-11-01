@@ -983,8 +983,17 @@ svg .dim { opacity: 0.15; transition: opacity 300ms var(--ease); }
 .gl-shot.on.amber { border-color: var(--amber-line); box-shadow: 0 0 24px rgba(255, 184, 107, 0.14); }
 .gl-shot__thumb {
   display: block; width: 100%; height: 64px; border-radius: var(--r-sm);
+  position: relative;
   background: linear-gradient(135deg, rgba(138, 184, 255, 0.1), rgba(255, 255, 255, 0.03) 60%, transparent);
 }
+/* 详略权重角标放在缩略图上：卡片只有 146px 宽，塞进 meta 行会被挤掉 */
+.gl-shot__w {
+  position: absolute; top: 5px; right: 6px;
+  font-style: normal; font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 0.04em;
+  color: var(--cyan);
+}
+.gl-shot.is-light .gl-shot__w { color: var(--ink-faint); }
 .gl-shot__thumb[data-tone="cyan"] { background: linear-gradient(135deg, rgba(92, 225, 230, 0.3), rgba(92, 225, 230, 0.05) 70%); }
 .gl-shot__thumb[data-tone="amber"] { background: linear-gradient(135deg, rgba(255, 184, 107, 0.3), rgba(255, 184, 107, 0.05) 70%); }
 .gl-shot__meta {
@@ -1004,6 +1013,11 @@ svg .dim { opacity: 0.15; transition: opacity 300ms var(--ease); }
 .gl-tl-seg:hover { background: rgba(255, 255, 255, 0.18); }
 .gl-tl-seg.on { background: var(--cyan); box-shadow: 0 0 12px rgba(92, 225, 230, 0.5); }
 .gl-tl-seg.on.amber { background: var(--amber); box-shadow: 0 0 12px rgba(255, 184, 107, 0.45); }
+/* 详略权重在分镜上的可见痕迹：重点镜更亮、简讲镜更淡 */
+.gl-shot.is-key { border-color: rgba(92, 225, 230, 0.42); }
+.gl-shot.is-light { opacity: 0.72; }
+.gl-tl-seg.key { background: rgba(92, 225, 230, 0.85); }
+.gl-tl-seg.light { background: rgba(146, 180, 220, 0.26); }
 
 /* ---------- 观众预演 · 理解度曲线 ---------- */
 .gl-aud-stat {

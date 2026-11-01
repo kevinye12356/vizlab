@@ -122,6 +122,11 @@ interface DragState {
 /* 拖动时相连节点的阻尼牵引系数：被拖的走满，直接相连的跟一点，
    整条链看起来是"被拎起来"的，而不是每个方块各自脱开。 */
 const DRAG_DAMP = 0.18;
+/* 拖动的视觉位移封顶。这里是"调档"不是"摆积木"：
+   真按手指距离移动，第一行的节点往上拖 70px 就冲出面板被裁掉了。
+   手势仍按真实位移判定，只是画面上最多抬 26px。 */
+const DRAG_VIS_Y = 26;
+const DRAG_VIS_X = 30;
 
 const NODE_W = 200;
 const NODE_H = 84;
@@ -481,7 +486,12 @@ function edgePath(e: GEdge, nodes: GNode[], drag?: DragState | null): string {
      连线和方块用同一套偏移，整条因果链才是"连在一起被拉动"。 */
   const delta = (id: string) => {
     if (!drag?.active) return { x: 0, y: 0 };
-    if (id === drag.id) return { x: drag.dx, y: drag.dy };
+    if (id === drag.id) {
+      return {
+        x: Math.max(-DRAG_VIS_X, Math.min(DRAG_VIS_X, drag.dx * 0.4)),
+        y: Math.max(-DRAG_VIS_Y, Math.min(DRAG_VIS_Y, drag.dy)),
+      };
+    }
     const touches = e.from === drag.id || e.to === drag.id;
     return touches ? { x: drag.dx * DRAG_DAMP, y: drag.dy * DRAG_DAMP } : { x: 0, y: 0 };
   };
@@ -496,13 +506,16 @@ function edgePath(e: GEdge, nodes: GNode[], drag?: DragState | null): string {
     const x2 = bx + NODE_W;
     return `M ${x1} ${ay} C ${x1 + 60} ${ay}, ${x2 + 60} ${by}, ${x2} ${by}`;
   }
-  // 跨行且同列。真实概念图（模型生成，可能是分支而非单链）里这种边
-  // 会落在任意一列，向左/右绕弧线就会横穿整张图面，所以直接竖直连下去。
-  if (Math.abs(ax - bx) < 1) {
-    const x = ax + NODE_W / 2;
+  // 跨行且同列。同列判断必须用【原始】坐标：拖动时两端偏移量不同
+  // （被拖的走满、另一端只跟随 0.18），若拿偏移后的坐标判断，原本的
+  // 竖直连线会被误判成水平线、转头跑到图的另一侧去。
+  if (Math.abs(a.x - b.x) < 1) {
+    const x1 = a.x + da.x + NODE_W / 2;
+    const x2 = b.x + db.x + NODE_W / 2;
     const top = a.y + da.y + NODE_H;
     const bottom = b.y + db.y;
-    return `M ${x} ${top} L ${x} ${bottom}`;
+    const my = (top + bottom) / 2;
+    return `M ${x1} ${top} C ${x1} ${my}, ${x2} ${my}, ${x2} ${bottom}`;
   }
   if (bx > ax) {
     const x1 = ax + NODE_W;
@@ -770,13 +783,18 @@ export default function GlassLab() {
     })();
   }, [phase, compiled, compiledOpts.output]);
 
-  /* 核验用：?to=<id> 在观众预演数据到位后把该区块滚进视口。
-     headless 截图只能拍视口，不滚就永远验不到下半页。 */
+  /* 核验用：?to=<id> 把指定区块滚进视口（headless 只能拍视口，不滚永远验不到下半页）。
+     依赖 compiled 而不是 audience —— 否则只有「完整方案」才滚。 */
   useEffect(() => {
-    if (!audience) return;
+    if (!compiled) return;
     const to = new URLSearchParams(window.location.search).get("to");
-    if (to) document.getElementById(to)?.scrollIntoView({ block: "start" });
-  }, [audience]);
+    if (!to) return;
+    const t = window.setTimeout(
+      () => document.getElementById(to)?.scrollIntoView({ block: "start" }),
+      800,
+    );
+    return () => window.clearTimeout(t);
+  }, [compiled]);
 
   /* 核验用：?drag=<节点序号>&dx=&dy= 冻结一个"正在拖动"的状态；
      ?w=<序号>:<权重>,... 直接套一份详略权重（?drag 不会触发 pointerup）。 */
@@ -867,7 +885,13 @@ export default function GlassLab() {
   const nodeOffset = useCallback(
     (id: string) => {
       if (!drag?.active) return { x: 0, y: 0 };
-      if (id === drag.id) return { x: drag.dx, y: drag.dy };
+      if (id === drag.id) {
+        /* 与 edgePath 里的封顶保持一致，否则线和方块会脱开 */
+        return {
+          x: Math.max(-DRAG_VIS_X, Math.min(DRAG_VIS_X, drag.dx * 0.4)),
+          y: Math.max(-DRAG_VIS_Y, Math.min(DRAG_VIS_Y, drag.dy)),
+        };
+      }
       const linked = edges.some(
         (e) => (e.from === drag.id && e.to === id) || (e.to === drag.id && e.from === id),
       );
@@ -899,14 +923,22 @@ export default function GlassLab() {
     return () => window.clearTimeout(t);
   }, [compiled, graphW, graphH, nodes.length]);
 
-  /* 拖动方向 = 详略：向上拖是「重点展开」，向下拖是「简讲」。
-     幅度不到 50px 视为手抖，回弹、不改权重。 */
+  /* 拖动方向 = 详略，三档吸附：
+       向上 ≥50px   → 重点展开（3）
+       向下 ≥50px   → 简讲（1）
+       中间 18~50px → 均分（2）
+     |dy| ≤18px 视为没动，保持原样。
+     关键是中间那档 —— 否则一旦设成重点/简讲，就再也拖不回去了。 */
   const weightOf = (id: string) => weights[id] ?? 2;
+  const snapWeight = (dy: number): number | null => {
+    if (Math.abs(dy) <= 18) return null;
+    if (dy <= -50) return 3;
+    if (dy >= 50) return 1;
+    return 2;
+  };
   const pendingWeight = (id: string) => {
     if (!drag?.active || drag.id !== id) return weightOf(id);
-    if (drag.dy <= -50) return 3;
-    if (drag.dy >= 50) return 1;
-    return weightOf(id);
+    return snapWeight(drag.dy) ?? weightOf(id);
   };
 
   /* 松手处理放进 ref：window 监听的闭包否则会读到过期的 weights */
@@ -916,9 +948,15 @@ export default function GlassLab() {
       const cur = dragRef.current;
       dragStart.current = null;
       if (cur) {
-        const next = cur.dy <= -50 ? 3 : cur.dy >= 50 ? 1 : null;
+        const next = snapWeight(cur.dy);
         if (next !== null && next !== weightOf(cur.id)) {
-          setWeights((w) => ({ ...w, [cur.id]: next }));
+          setWeights((w) => {
+            const copy = { ...w };
+            /* 回到均分就把这条记录删掉，保持"只有偏离默认的才记录"的语义 */
+            if (next === 2) delete copy[cur.id];
+            else copy[cur.id] = next;
+            return copy;
+          });
         }
       }
       dragRef.current = null;
@@ -1695,7 +1733,11 @@ export default function GlassLab() {
             </section>
 
             {/* 分镜 + 时间轴 */}
-            <section className={`reveal${showShots ? "" : " is-hidden"}`} style={d(120)}>
+            <section
+              className={`reveal${showShots ? "" : " is-hidden"}`}
+              id="shots"
+              style={d(120)}
+            >
               <div className="gl-section-head">
                 <div>
                   <h2>
@@ -1703,39 +1745,56 @@ export default function GlassLab() {
                   </h2>
                   <p className="gl-sub">
                     胶片卡与时间轴双向联动 · 第 {Math.floor(shots.length / 2) + 1} 镜为关键转折
+                    {Object.keys(weights).length > 0 && (
+                      <span className="gl-acc"> · 已按因果链详略重排时长</span>
+                    )}
                   </p>
                 </div>
               </div>
               <div className="gl-shots">
-                {weightedShots.map((s, i) => (
-                  <button
-                    key={s.no}
-                    ref={(el) => {
-                      shotRefs.current[i] = el;
-                    }}
-                    className={`glass gl-shot${activeShot === i ? ` on${s.tone === "amber" ? " amber" : ""}` : ""}`}
-                    aria-pressed={activeShot === i}
-                    onClick={() => selectShot(i)}
-                  >
-                    <span className="gl-shot__thumb" data-tone={s.tone ?? "base"} />
-                    <span className="gl-shot__meta">
-                      {s.no} · {s.type} · {s.dur}s
-                    </span>
-                    <span className="gl-shot__text">{s.text}</span>
-                  </button>
-                ))}
+                {weightedShots.map((s, i) => {
+                  const w = weights[s.conceptId ?? ""] ?? 2;
+                  return (
+                    <button
+                      key={s.no}
+                      ref={(el) => {
+                        shotRefs.current[i] = el;
+                      }}
+                      className={`glass gl-shot${activeShot === i ? ` on${s.tone === "amber" ? " amber" : ""}` : ""}${
+                        w === 3 ? " is-key" : w === 1 ? " is-light" : ""
+                      }`}
+                      aria-pressed={activeShot === i}
+                      onClick={() => selectShot(i)}
+                    >
+                      <span className="gl-shot__thumb" data-tone={s.tone ?? "base"}>
+                        {w !== 2 && (
+                          <i className="gl-shot__w">{w === 3 ? "重点" : "简讲"}</i>
+                        )}
+                      </span>
+                      <span className="gl-shot__meta">
+                        {s.no} · {s.type} · {s.dur}s
+                      </span>
+                      <span className="gl-shot__text">{s.text}</span>
+                    </button>
+                  );
+                })}
               </div>
               <div className="gl-timeline" role="group" aria-label="分镜时间轴">
-                {weightedShots.map((s, i) => (
-                  <button
-                    key={s.no}
-                    className={`gl-tl-seg${activeShot === i ? " on" : ""}${s.tone === "amber" ? " amber" : ""}`}
-                    style={{ flexGrow: s.dur }}
-                    onClick={() => selectShot(i, true)}
-                    aria-label={`第 ${s.no} 镜 · ${s.type} · ${s.dur} 秒`}
-                    title={`${s.no} · ${s.type} · ${s.dur}s`}
-                  />
-                ))}
+                {weightedShots.map((s, i) => {
+                  const w = weights[s.conceptId ?? ""] ?? 2;
+                  return (
+                    <button
+                      key={s.no}
+                      className={`gl-tl-seg${activeShot === i ? " on" : ""}${s.tone === "amber" ? " amber" : ""}${
+                        w === 3 ? " key" : w === 1 ? " light" : ""
+                      }`}
+                      style={{ flexGrow: s.dur }}
+                      onClick={() => selectShot(i, true)}
+                      aria-label={`第 ${s.no} 镜 · ${s.type} · ${s.dur} 秒${w === 3 ? " · 重点展开" : w === 1 ? " · 简讲" : ""}`}
+                      title={`${s.no} · ${s.type} · ${s.dur}s`}
+                    />
+                  );
+                })}
               </div>
             </section>
 
