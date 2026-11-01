@@ -609,12 +609,22 @@ function materialize(
   r: Recognition | null,
   o: CompileOptions,
   absName: string,
+  view?: CompileView | null,
 ): string {
+  /* 「条件」和「现象」原来只取自本地关键词识别（analyze），
+     而它只认一张小词表 —— 词表里没有的写法一律填「待补充」。
+     但本次编译已经有真实因果链：链的起点就是"在什么条件下"、
+     终点就是"出现什么现象"。所以识别不到时退到链的两端，
+     只有在连链都没有时才写「待补充」。 */
+  const start = view?.nodes.find((n) => n.start);
+  const terminal = view?.nodes.find((n) => n.terminal);
+  const condition = r?.condition?.trim() || start?.labels[1] || "待补充";
+  const phenomenon = r?.phenomenon?.trim() || terminal?.labels[1] || "待补充";
   return p
     .replace(/\$\{时长\}/g, o.duration)
     .replace(/\$\{受众\}/g, o.audience)
-    .replace(/\$\{现象\}/g, r?.phenomenon || "待补充")
-    .replace(/\$\{条件\}/g, r?.condition || "待补充")
+    .replace(/\$\{现象\}/g, phenomenon)
+    .replace(/\$\{条件\}/g, condition)
     .replace(/\$\{抽象层级\}/g, absName);
 }
 
@@ -1370,7 +1380,10 @@ export default function GlassLab() {
 
   /* 复制（剪贴板三级回退） */
   const copyPrompt = async () => {
-    const out = materialize(buildTemplate(compiledQuestion), compiledRec, compiledOpts, ABS[abstraction].name);
+    /* 用屏幕上显示的那一份（compiled.prompt + 详略），不是写死的 mock。
+       原来这里调 buildTemplate —— 复制出来的永远是"天一冷想尿尿"那条链，
+       和看到的完全不是一回事。 */
+    const out = materialize(template, compiledRec, compiledOpts, ABS[abstraction].name, compiled);
     let ok = false;
     try {
       await navigator.clipboard.writeText(out);
