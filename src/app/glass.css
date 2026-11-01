@@ -68,6 +68,9 @@
 
   /* 布局 */
   --max-w: 1240px;
+  /* 全站唯一的左右边距。之前导航 48 / 内容 40 / 首页 24 三套并存，
+     结果页里「品牌字标」和「顶栏搜索框」差 18px，看着就是没对齐。 */
+  --gutter-x: 40px;
   /* 首屏重心：副标题 → 输入台、输入台 → 选项条 */
   --gap-hero-input: 48px;
   --gap-input-options: 20px;
@@ -240,7 +243,16 @@ button { font-family: inherit; cursor: pointer; }
    首页 · 导航 / Hero
    ============================================================ */
 .gl-landing { position: relative; z-index: 1; min-height: 100vh; display: flex; flex-direction: column; }
-.gl-nav { display: flex; align-items: center; justify-content: space-between; padding: 28px 48px; gap: 16px; }
+/* 导航与内容共用同一个 1240 容器 + 同一个左右边距。
+   之前导航是「通栏 + 48px」，内容是「1240 容器 + 40px」，
+   于是 1440 屏上品牌字标在 48，内容块在 140 —— 两个左边。 */
+.gl-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; max-width: var(--max-w); margin: 0 auto;
+  padding: 28px var(--gutter-x); gap: 16px;
+}
+/* 结果页的导航已经在 .gl-result-wrap 的容器内，不能再叠一层边距 */
+.gl-result-wrap .gl-nav { max-width: none; padding-left: 0; padding-right: 0; }
 /* 导航右侧整组：目标模型 / 动效 / 提示。
    收进一个容器之后才可能在窄屏整组换行，否则每多一项就多咬掉品牌一格。 */
 .gl-nav__side { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -250,7 +262,10 @@ button { font-family: inherit; cursor: pointer; }
 .gl-brand { display: flex; flex-direction: column; gap: 3px; }
 .gl-brand__mark {
   font-family: var(--font-mono); font-weight: 500;
-  letter-spacing: 0.35em; font-size: 15px; color: var(--ink);
+  /* 项目名要能第一眼读到：原来 15px / 0.35em 的字距把 VIZLAB 拉成一串散点，
+     在一个 46px 大标题旁边几乎不存在。字号提到 21px、字距收到 0.18em，
+     字标才成为「标」而不是一行细字。 */
+  letter-spacing: 0.18em; font-size: 21px; line-height: 1.1; color: var(--ink);
 }
 .gl-brand__sub { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.2em; color: var(--ink-faint); }
 .gl-pill {
@@ -261,7 +276,7 @@ button { font-family: inherit; cursor: pointer; }
    「nav 下方 → 视口底」之间居中：既保住组内 48px / 20px 的精确间距，
    又不让整组被顶到上半屏、在下方留一大片空白。
    顶部不再用固定 12vh——固定值在不同屏高下会把焦点顶偏。 */
-.gl-hero { text-align: center; padding: 0 24px var(--gap-hero-input); margin-top: auto; }
+.gl-hero { text-align: center; padding: 0 var(--gutter-x) var(--gap-hero-input); margin-top: auto; }
 .gl-hero h1 {
   font-size: clamp(26px, 4.2vw, 46px); font-weight: 300;
   letter-spacing: 0.02em; line-height: 1.35;
@@ -279,7 +294,7 @@ button { font-family: inherit; cursor: pointer; }
   display: flex; flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding: 0 24px;
+  padding: 0 var(--gutter-x);
   gap: var(--gap-input-options);
   margin-bottom: auto;
 }
@@ -771,11 +786,14 @@ button { font-family: inherit; cursor: pointer; }
 .gl-result-wrap {
   position: relative; z-index: 1;
   max-width: var(--max-w); margin: 0 auto;
-  padding: 0 40px 110px;
+  padding: 0 var(--gutter-x) 110px;
 }
 .gl-result {
   position: relative; z-index: 1;
-  display: flex; flex-direction: column; gap: 64px;
+  display: flex; flex-direction: column;
+  /* 区块之间要明显大于区块内部的行距：64px 在 1440 下读不出「换段」，
+     参考区间是 120–240。取 clamp 让窄屏收、宽屏放。 */
+  gap: clamp(56px, 7.5vw, 120px);
   padding-top: 28px;
 }
 .gl-topbar {
@@ -975,7 +993,9 @@ svg .dim { opacity: 0.15; transition: opacity 300ms var(--ease); }
 .gl-abs button[aria-checked="true"] { color: var(--cyan); }
 
 /* ---------- 分镜 / 时间轴 ---------- */
-.gl-shots { display: grid; grid-template-columns: repeat(8, 1fr); gap: 14px; }
+/* 原来固定 8 列，而真实镜数是 5~8 —— 7 镜时右端会空出一整列，
+   每张卡又被压到 ~90px，5 行旁白塞不下。改成自适应最小宽度。 */
+.gl-shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 14px; }
 .gl-shot {
   display: flex; flex-direction: column; gap: 8px; padding: 12px;
   text-align: left; border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1008,12 +1028,18 @@ svg .dim { opacity: 0.15; transition: opacity 300ms var(--ease); }
 }
 .gl-shot.on .gl-shot__meta { color: var(--cyan); }
 .gl-shot.on.amber .gl-shot__meta { color: var(--amber); }
-.gl-shot__text { font-size: 13px; line-height: 1.55; }
+.gl-shot__text {
+  font-size: 13px; line-height: 1.55;
+  /* 卡宽有限，旁白整段照搬会把卡拉成细长柱；限三行，全文在 title 里 */
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 
 .gl-timeline { display: flex; gap: 4px; height: 10px; margin-top: 16px; }
 .gl-tl-seg {
   border: 0; border-radius: 3px; min-width: 12px;
-  background: rgba(255, 255, 255, 0.09);
+  /* 原来 0.09 的白色在深底上等于没有，整条时间轴只剩选中那一段可见 */
+  background: rgba(146, 180, 220, 0.22);
   transition: background var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 .gl-tl-seg:hover { background: rgba(255, 255, 255, 0.18); }
@@ -1135,27 +1161,40 @@ svg .dim { opacity: 0.15; transition: opacity 300ms var(--ease); }
     display: flex; flex-direction: column; gap: 26px; padding: 24px;
   }
   .gl-graph__svg { display: none; }
-  .gl-node { position: static; width: 100%; cursor: default; }
+  /* 竖排也要看得见「因果」——这是产品的核心，不能一降级就消失。
+     position:relative 是必须的：原来的节点是 static，而连接线用绝对定位，
+     结果所有箭头都相对 .gl-graph 定位、叠在同一处，等于没画。
+     contain 去掉 paint 分量，否则连线会被节点自己的绘制边界裁掉。 */
+  .gl-node { position: relative; width: 100%; cursor: default; contain: layout style; }
   .gl-node--bypass { width: 100%; }
   .gl-graph .gl-node:not(:first-child)::before {
-    content: "↓"; position: absolute; top: -25px; left: 50%;
-    transform: translateX(-50%);
-    font-family: var(--font-mono); font-size: 13px; color: var(--ink-faint);
+    content: ""; position: absolute; top: -26px; left: 50%;
+    width: 1px; height: 20px; transform: translateX(-50%);
+    background: linear-gradient(to bottom, rgba(92, 225, 230, 0.06), rgba(92, 225, 230, 0.55));
+  }
+  .gl-graph .gl-node:not(:first-child)::after {
+    content: ""; position: absolute; top: -8px; left: 50%;
+    width: 5px; height: 5px; margin-left: -2.5px;
+    border-right: 1px solid rgba(92, 225, 230, 0.65);
+    border-bottom: 1px solid rgba(92, 225, 230, 0.65);
+    transform: rotate(45deg);
   }
 }
 @media (max-width: 960px) {
-  .gl-nav { padding: 20px 20px; }
+  :root { --gutter-x: 20px; }
+  .gl-nav { padding: 20px var(--gutter-x); }
   .gl-desk { width: 100%; }
   .gl-shots { grid-template-columns: repeat(2, 1fr); }
   .gl-float-card { display: none; }
   .aurora__blob { opacity: 0.7; }
   .gl-opts { gap: 14px; }
-  .gl-result { padding: 20px 20px 80px; gap: 48px; }
+  .gl-result { padding: 20px 0 80px; gap: 56px; }
   /* 居中由 .gl-hero 的 margin-top:auto 负责；这里只给一个最小呼吸，
      不能再用固定 5vh——否则会叠加在 auto 外边距之上把组推偏。 */
   .gl-hero { padding-top: 10px; }
 }
 @media (max-width: 560px) {
+  :root { --gutter-x: 18px; }
   .gl-shots { grid-template-columns: 1fr; }
   .gl-compile { width: 88px; height: 52px; font-size: 13px; }
   .gl-input, .gl-mirror { font-size: 15px; padding: 15px 14px; }
@@ -1164,7 +1203,7 @@ svg .dim { opacity: 0.15; transition: opacity 300ms var(--ease); }
      品牌折成两行、动效开关压成「动/效/：/完/整」竖排单字、
      琥珀提示被挤成贴右边缘的一列竖排字。
      改法：品牌只留字标；右侧整组允许换行并对齐到右；提示独占自己一行。 */
-  .gl-nav { padding: 16px 18px; flex-wrap: wrap; row-gap: 10px; }
+  .gl-nav { padding: 16px var(--gutter-x); flex-wrap: wrap; row-gap: 10px; }
   .gl-brand__sub { display: none; }
   .gl-brand__mark { white-space: nowrap; }
   .gl-nav__side { gap: 8px; flex-wrap: wrap; justify-content: flex-end; }

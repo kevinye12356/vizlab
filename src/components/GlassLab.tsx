@@ -1787,6 +1787,8 @@ export default function GlassLab() {
                       }`}
                       aria-pressed={activeShot === i}
                       onClick={() => selectShot(i)}
+                      /* 旁白在卡里被裁到三行，全文放 title */
+                      title={s.text}
                     >
                       <span className="gl-shot__thumb" data-tone={s.tone ?? "base"}>
                         {w !== 2 && (
