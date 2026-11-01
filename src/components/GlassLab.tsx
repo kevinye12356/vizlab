@@ -157,6 +157,8 @@ interface Shot {
   dur: number;
   text: string;
   tone?: "cyan" | "amber";
+  /** 这一镜讲的是哪个概念（用于把详略权重对回具体的环） */
+  conceptId?: string;
 }
 
 const SHOTS: Shot[] = [
@@ -397,6 +399,7 @@ function toShots(sb: Storyboard): Shot[] {
     type: (s.beat.split(/[:：]/)[0] || "分镜").slice(0, 6),
     dur: Math.round(s.durationSec),
     text: s.narration || s.visual,
+    conceptId: s.conceptId,
     tone: i === last ? "amber" : i === key ? "cyan" : undefined,
   }));
 }
@@ -623,9 +626,10 @@ export default function GlassLab() {
   const [absFade, setAbsFade] = useState(false);
   const [hover, setHover] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
-  /* 用户重排后的因果链顺序（节点 id 数组）。null = AI 给的原顺序。
-     注意这是"改讲法"不是"改因果事实"：边的语义不变，只是先后次序变了。 */
-  const [order, setOrder] = useState<string[] | null>(null);
+  /* 每条因果链的「详略权重」：1 简讲 / 2 正常 / 3 重点展开。
+     因果链本身锁死 —— 那是 AI 的判断，不该让用户改；
+     用户真正该调的是「这一环讲多少」，那才影响成片。 */
+  const [weights, setWeights] = useState<Record<string, number>>({});
   /* 拖动过程挂在 window 上，闭包里的 drag 会过期，所以另存一份 ref */
   const dragRef = useRef<DragState | null>(null);
   const [activeShot, setActiveShot] = useState(4);
@@ -774,26 +778,28 @@ export default function GlassLab() {
     if (to) document.getElementById(to)?.scrollIntoView({ block: "start" });
   }, [audience]);
 
-  /* 核验用：?drag=<节点序号>&dx=&dy= 冻结一个"正在拖动"的状态。
-     拖拽是动态行为，不这样固定住就没法用静态截图检查连线是否跟随。 */
+  /* 核验用：?drag=<节点序号>&dx=&dy= 冻结一个"正在拖动"的状态；
+     ?w=<序号>:<权重>,... 直接套一份详略权重（?drag 不会触发 pointerup）。 */
   useEffect(() => {
     if (!compiled) return;
     const p = new URLSearchParams(window.location.search);
-    /* ?order=2,0,1,3,4 直接套一个重排结果，用来核验"松手之后"的画面
-       （?drag 只能冻结拖动中，不会触发 pointerup） */
-    const ord = p.get("order");
-    if (ord) {
-      const idx = ord.split(",").map((x) => Number(x.trim()));
-      const ids = idx.map((i) => compiled.nodes[i]?.id).filter(Boolean) as string[];
-      if (ids.length === compiled.nodes.length) setOrder(ids);
+    const wq = p.get("w");
+    if (wq) {
+      const next: Record<string, number> = {};
+      wq.split(",").forEach((pair) => {
+        const [i, v] = pair.split(":").map((x) => Number(x.trim()));
+        const node = compiled.nodes[i];
+        if (node && v >= 1 && v <= 3) next[node.id] = v;
+      });
+      setWeights(next);
     }
     if (p.get("drag") === null) return;
     const n = compiled.nodes[Number(p.get("drag"))];
     if (!n) return;
     setDrag({
       id: n.id,
-      dx: Number(p.get("dx") ?? 130),
-      dy: Number(p.get("dy") ?? 80),
+      dx: Number(p.get("dx") ?? 0),
+      dy: Number(p.get("dy") ?? 90),
       active: true,
     });
   }, [compiled]);
@@ -839,31 +845,21 @@ export default function GlassLab() {
   const showShots = outMode !== "仅提示词";
   const showAudience = outMode === "完整方案";
   const showSpec = outMode === "完整方案";
-  /* 观众预演派生量。shotIndex 是 0-based（后端 Shot.index 口径），显示时 +1 */  /* 按用户顺序重排后的链：坐标按新顺序重新分配，边按新顺序重建
-     （前一环 → 它 → 后一环）。这是拖拽真正的"意义"所在 ——
-     松手之后，序号、连线、提示词的机制链会一起变。 */
-  const seqNodes = useMemo(() => {
-    if (!order) return graphNodes;
-    const byId = new Map(graphNodes.map((n) => [n.id, n]));
-    const seq = order.map((id) => byId.get(id)).filter(Boolean) as GNode[];
-    return seq.map((n, i) => ({
-      ...n,
-      x: lay.pos[i]?.x ?? n.x,
-      y: lay.pos[i]?.y ?? n.y,
-      start: i === 0,
-      terminal: i === seq.length - 1,
-      missing: false,
-    }));
-  }, [order, graphNodes, lay]);
+  /* 观众预演派生量。shotIndex 是 0-based（后端 Shot.index 口径），显示时 +1 */
 
-  const seqEdges = useMemo<GEdge[]>(() => {
-    if (!order || seqNodes.length < 2) return edges;
-    return seqNodes.slice(0, -1).map((n, i) => ({
-      from: n.id,
-      to: seqNodes[i + 1].id,
-      amber: i === seqNodes.length - 2,
+  /* 按详略权重重算每镜时长：总时长不变，只是重新分配。
+     分镜每镜都带 conceptId，可以精确对回某一环。 */
+  const weightedShots = useMemo<Shot[]>(() => {
+    if (!shots.length || Object.keys(weights).length === 0) return shots;
+    const factor = (id?: string) => (id ? (weights[id] ?? 2) : 2) / 2;
+    const raw = shots.map((s) => s.dur * factor(s.conceptId));
+    const sum = raw.reduce((a, b) => a + b, 0);
+    if (sum <= 0) return shots;
+    return shots.map((s, i) => ({
+      ...s,
+      dur: Math.round(((raw[i] * totalSec) / sum) * 10) / 10,
     }));
-  }, [order, seqNodes, edges]);
+  }, [shots, weights, totalSec]);
 
   /* 节点位移场，与 edgePath 内部保持一致：
      被拖的节点走满位移，与它直接相连的节点按阻尼牵引 —— 这样拖动时
@@ -872,12 +868,12 @@ export default function GlassLab() {
     (id: string) => {
       if (!drag?.active) return { x: 0, y: 0 };
       if (id === drag.id) return { x: drag.dx, y: drag.dy };
-      const linked = seqEdges.some(
+      const linked = edges.some(
         (e) => (e.from === drag.id && e.to === id) || (e.to === drag.id && e.from === id),
       );
       return linked ? { x: drag.dx * DRAG_DAMP, y: drag.dy * DRAG_DAMP } : { x: 0, y: 0 };
     },
-    [drag, seqEdges],
+    [drag, edges],
   );
 
   /* 核验用：?dbg=1 把概念图的实测几何打印到页面上。
@@ -903,45 +899,26 @@ export default function GlassLab() {
     return () => window.clearTimeout(t);
   }, [compiled, graphW, graphH, nodes.length]);
 
-  /* 松手落点：取离节点中心最近的槽位 */
-  const dropIndex = (id: string): number => {
-    const n = seqNodes.find((x) => x.id === id);
-    if (!n) return -1;
-    const off = nodeOffset(id);
-    const cx = n.x + off.x + NODE_W / 2;
-    const cy = n.y + off.y + NODE_H / 2;
-    let best = 0;
-    let bestD = Number.POSITIVE_INFINITY;
-    lay.pos.forEach((p, i) => {
-      const dx = p.x + NODE_W / 2 - cx;
-      const dy = p.y + NODE_H / 2 - cy;
-      const dd = dx * dx + dy * dy;
-      if (dd < bestD) {
-        bestD = dd;
-        best = i;
-      }
-    });
-    return best;
+  /* 拖动方向 = 详略：向上拖是「重点展开」，向下拖是「简讲」。
+     幅度不到 50px 视为手抖，回弹、不改权重。 */
+  const weightOf = (id: string) => weights[id] ?? 2;
+  const pendingWeight = (id: string) => {
+    if (!drag?.active || drag.id !== id) return weightOf(id);
+    if (drag.dy <= -50) return 3;
+    if (drag.dy >= 50) return 1;
+    return weightOf(id);
   };
 
-  /* 松手处理：位移够大就重排链条，否则视为抖动、只做回弹。
-     存进 ref，window 监听的闭包才不会读到过期的 seqNodes。 */
+  /* 松手处理放进 ref：window 监听的闭包否则会读到过期的 weights */
   const dragUpRef = useRef<() => void>(() => {});
   useEffect(() => {
     dragUpRef.current = () => {
       const cur = dragRef.current;
       dragStart.current = null;
       if (cur) {
-        const moved = Math.hypot(cur.dx, cur.dy) > 44;
-        if (moved) {
-          const from = seqNodes.findIndex((n) => n.id === cur.id);
-          const to = dropIndex(cur.id);
-          if (from >= 0 && to >= 0 && to !== from) {
-            const ids = seqNodes.map((n) => n.id);
-            ids.splice(from, 1);
-            ids.splice(to, 0, cur.id);
-            setOrder(ids);
-          }
+        const next = cur.dy <= -50 ? 3 : cur.dy >= 50 ? 1 : null;
+        if (next !== null && next !== weightOf(cur.id)) {
+          setWeights((w) => ({ ...w, [cur.id]: next }));
         }
       }
       dragRef.current = null;
@@ -1401,12 +1378,22 @@ export default function GlassLab() {
      写死的那条链，跟用户问的问题完全没关系。 */
   const template = useMemo(() => {
     const base = compiled?.prompt ?? buildTemplate(compiledQuestion);
-    if (!order) return base;
-    /* 用户重排过因果链：把【核心机制】那行换成新顺序，
-       否则会出现"图变了、提示词还是老的" —— 那等于假交互。 */
-    const chain = seqNodes.map((n) => n.labels[1]).join(" → ");
-    return base.replace(/【核心机制】[^\n]*/, `【核心机制】${chain}`);
-  }, [compiled, compiledQuestion, order, seqNodes]);
+    const tuned = Object.entries(weights).filter(([, v]) => v !== 2);
+    if (!tuned.length) return base;
+    /* 因果链一个字不改，只把「这一环讲多少」写进提示词 ——
+       否则前端调了权重、交给下游的还是均分，等于白调。 */
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    const nameOf = (id: string) => byId.get(id)?.labels[1];
+    const heavy = tuned.filter(([, v]) => v === 3).map(([id]) => nameOf(id)).filter(Boolean);
+    const light = tuned.filter(([, v]) => v === 1).map(([id]) => nameOf(id)).filter(Boolean);
+    const line = [
+      heavy.length ? `重点展开：${heavy.join("、")}` : "",
+      light.length ? `简讲：${light.join("、")}` : "",
+    ]
+      .filter(Boolean)
+      .join("；");
+    return base.replace(/(【输出 JSON】)/, `【详略】${line}\n$1`);
+  }, [compiled, compiledQuestion, weights, nodes]);
   /* 识别不到条件/现象时的兜底两段（见 splitSentence） */
   const [fbA, fbB] = useMemo(() => splitSentence(compiledQuestion), [compiledQuestion]);
 
@@ -1547,21 +1534,21 @@ export default function GlassLab() {
                   <h2>
                     概念图 · <b>因果链</b>
                   </h2>
-                  {/* 拖拽必须有语义：拖动中告诉他将插到第几位，
-                      松手后说明这条链已经真的被改写了 */}
-                  {drag?.active && seqNodes.length > 1 ? (
+                  {/* 拖动 = 调这一环讲多少（因果链锁死，不改 AI 的判断） */}
+                  {drag?.active ? (
                     <p className="gl-sub">
-                      松手插入第{" "}
-                      <b className="gl-acc">{Math.max(1, dropIndex(drag.id) + 1)}</b> 位 · 整条链会随之重连
+                      松手设为{" "}
+                      <b className="gl-acc">
+                        {["简讲", "正常", "重点展开"][pendingWeight(drag.id) - 1]}
+                      </b>{" "}
+                      · 分镜时长会重新分配
                     </p>
                   ) : (
                     <p className="gl-sub">
-                      {order
-                        ? "已按你的顺序重连 · 序号、连线与提示词核心机制都已同步重写"
-                        : `${seqNodes.length} 步机制 · 悬停查看上下游 · 拖动节点可重排先后次序`}
-                      {order && (
-                        <button type="button" className="gl-reset" onClick={() => setOrder(null)}>
-                          恢复原始链
+                      {nodes.length} 步机制 · 上下拖动节点调「讲多少」
+                      {Object.keys(weights).length > 0 && (
+                        <button type="button" className="gl-reset" onClick={() => setWeights({})}>
+                          恢复均分
                         </button>
                       )}
                     </p>
@@ -1606,11 +1593,11 @@ export default function GlassLab() {
                   viewBox={`0 0 ${graphW} ${graphH}`}
                   aria-hidden="true"
                 >
-                  {seqEdges.map((e, i) => {
+                  {edges.map((e, i) => {
                     /* 与拖动节点直接相连的边：实时重算路径 + 提亮，
                        拖动时"链"是连着的，不是方块脱开 */
                     const live = !!drag?.active && (e.from === drag.id || e.to === drag.id);
-                    const dpath = edgePath(e, seqNodes, drag);
+                    const dpath = edgePath(e, graphNodes, drag);
                     const dim = edgeDim(e);
                     return (
                       <g key={`${e.from}-${e.to}`} className={dim && !live ? "dim" : ""}>
@@ -1630,7 +1617,7 @@ export default function GlassLab() {
                   })}
                 </svg>
 
-                {seqNodes.map((n, i) => {
+                {graphNodes.map((n, i) => {
                   /* 上下游关系：原先只有 hover 才可见，读屏与键盘用户永远拿不到。
                      改成 <button> + aria-describedby 后，聚焦即可获得同样的信息。 */
                   const ups = edges
@@ -1657,6 +1644,7 @@ export default function GlassLab() {
                         n.terminal ? "gl-node--terminal" : "",
                         n.missing ? "gl-node--missing" : "",
                         n.bypass ? "gl-node--bypass" : "",
+                        pendingWeight(n.id) !== 2 ? `gl-node--w${pendingWeight(n.id)}` : "",
                         drag?.id === n.id && drag.active ? "dragging" : "",
                         n.id === hover ? "hover" : "",
                         nodeDim(n.id) ? "dim" : "",
@@ -1687,6 +1675,11 @@ export default function GlassLab() {
                     >
                       <span className="gl-node__idx">{n.bypass ? "BYPASS" : String(i + 1).padStart(2, "0")}</span>
                       <span className="gl-node__label">{n.labels[abstraction]}</span>
+                      {pendingWeight(n.id) !== 2 && (
+                        <span className="gl-node__w">
+                          {pendingWeight(n.id) === 3 ? "重点" : "简讲"}
+                        </span>
+                      )}
                       {desc && (
                         <span id={`nd-${n.id}`} className="sr-only">
                           {desc}
@@ -1714,7 +1707,7 @@ export default function GlassLab() {
                 </div>
               </div>
               <div className="gl-shots">
-                {shots.map((s, i) => (
+                {weightedShots.map((s, i) => (
                   <button
                     key={s.no}
                     ref={(el) => {
@@ -1733,7 +1726,7 @@ export default function GlassLab() {
                 ))}
               </div>
               <div className="gl-timeline" role="group" aria-label="分镜时间轴">
-                {shots.map((s, i) => (
+                {weightedShots.map((s, i) => (
                   <button
                     key={s.no}
                     className={`gl-tl-seg${activeShot === i ? " on" : ""}${s.tone === "amber" ? " amber" : ""}`}
