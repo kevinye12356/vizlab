@@ -337,6 +337,20 @@ let DEBUG_API = "/api/compile";
 let DEBUG_SLOW = 0;
 
 /**
+ * 核验钩子的总开关：只有带 ?debug=1 时才认其余参数。
+ *
+ * 为什么必须加这一层：?auto=1 会让页面**自动编译一个示例问题**（?q= 没给时就是
+ * 内置的「为什么天一冷就想尿尿？」）。这类链接一旦被当成正常入口打开，用户会
+ * 看到网站「不管问什么都答尿尿」—— 那不是产品行为，是我核验时留下的地址。
+ * 把开关收到 debug 后面，带参链接就退回普通页面。
+ */
+function debugParams(): URLSearchParams | null {
+  if (typeof window === "undefined") return null;
+  const p = new URLSearchParams(window.location.search);
+  return p.get("debug") === "1" ? p : null;
+}
+
+/**
  * serpentine 布局：每行最多 4 个，奇数行反向。
  * 画布宽高由实际占位推导（而不是写死 1160×500），
  * 这样 5~6 个节点的真实结果不会有半屏空白。
@@ -787,7 +801,7 @@ export default function GlassLab() {
      依赖 compiled 而不是 audience —— 否则只有「完整方案」才滚。 */
   useEffect(() => {
     if (!compiled) return;
-    const to = new URLSearchParams(window.location.search).get("to");
+    const to = debugParams()?.get("to");
     if (!to) return;
     const t = window.setTimeout(
       () => document.getElementById(to)?.scrollIntoView({ block: "start" }),
@@ -800,7 +814,8 @@ export default function GlassLab() {
      ?w=<序号>:<权重>,... 直接套一份详略权重（?drag 不会触发 pointerup）。 */
   useEffect(() => {
     if (!compiled) return;
-    const p = new URLSearchParams(window.location.search);
+    const p = debugParams();
+    if (!p) return;
     const wq = p.get("w");
     if (wq) {
       const next: Record<string, number> = {};
@@ -904,8 +919,8 @@ export default function GlassLab() {
      截图缩放后读不出小字，只能让页面自己报数。 */
   const [dbgTxt, setDbgTxt] = useState("");
   useEffect(() => {
-    const p = new URLSearchParams(window.location.search);
-    if (p.get("dbg") !== "1") return;
+    const p = debugParams();
+    if (!p || p.get("dbg") !== "1") return;
     const t = window.setTimeout(() => {
       const box = document.querySelector(".gl-graph");
       const r = box?.getBoundingClientRect();
@@ -1086,24 +1101,18 @@ export default function GlassLab() {
     [runCompile, tryAdvance],
   );
 
-  /* 转场可跳过：Esc 或点「跳过」。数据已到就直接落到结果页；
-     还在等模型时则快进到「推演中」，别让用户对着空槽干等。 */
+  /* 跳过：只用来「跳过动画」，不是用来「跳过等待」。
+     有结果才允许跳 —— 没有结果时跳过去，结果页只能回落到写死的示例，
+     等于把用户的提问换成另一个问题的答案（这就是「先看结果」直接导向
+     「为什么天一冷就想尿尿」的原因）。所以这里严格空操作。 */
   const skipCompile = useCallback(() => {
+    if (!compiledRef.current) return;
     skipWantedRef.current = true;
     timers.current.forEach((t) => window.clearTimeout(t));
     timers.current = [];
-    if (compiledRef.current) {
-      phaseRef.current = "result";
-      setPhase("result");
-      return;
-    }
-    if (phaseRef.current === "compiling") {
-      setStage(3);
-      setWaiting(!compiledRef.current);
-      startAtRef.current = -1e12; // 解除"拍二必须演完"的时间门槛
-      tryAdvance();
-    }
-  }, [tryAdvance]);
+    phaseRef.current = "result";
+    setPhase("result");
+  }, []);
 
   useEffect(() => {
     if (phase !== "compiling") return;
@@ -1123,7 +1132,11 @@ export default function GlassLab() {
      有了这三个，headless --virtual-time-budget 才能真正按时间轴取样，
      验证"动画是否真的在跑"，而不只是看静止的端点。 */
   useEffect(() => {
-    const p = new URLSearchParams(window.location.search);
+    /* 下面每一个参数都会改变页面行为（自动编译示例、替换接口、冻结动画……），
+       所以统一要求 ?debug=1。没有这一层，一条带 ?auto=1 的旧链接就能让人
+       以为「这网站只会回答天一冷想尿尿」。 */
+    const p = debugParams();
+    if (!p) return;
     /* ?motion=full|simple 强制指定动效模式 —— 必须能在核验时绕开
        localStorage 与系统偏好，否则 headless（默认报告 reduce）永远验的是简化模式。 */
     const forceMotion = p.get("motion");
@@ -1520,8 +1533,10 @@ export default function GlassLab() {
             </div>
           </section>
         </div>
-      ) : phase === "result" ? (
-        /* ================= 结果页 ================= */
+      ) : phase === "result" && compiled ? (
+        /* ================= 结果页 =================
+           必须同时有真实编译产物才渲染。结果页的数据源是 `compiled?.x ?? 示例`，
+           少了这道判断，任何「没数据却进了结果态」的路径都会把示例当答案端出来。 */
         <div className="gl-result-wrap">
           <header className="gl-nav">
             <div className="gl-brand">
@@ -2135,7 +2150,13 @@ export default function GlassLab() {
                       aria-hidden="true"
                     >
                       {userWord && <span className="gl-tchip__user">{userWord}</span>}
-                      <span className="gl-tchip__node">{node.labels[1]}</span>
+                      {/* 概念名只在「真的有编译结果」时才渲染。
+                          用 waiting 不够：拍二（拆解）开始的那 1 秒里 waiting 还是 false、
+                          数据也没到，此时 node.labels 仍在读回退示例，于是
+                          「气温下降 / 抗利尿激素分泌减少」会先淡入 —— 那就是把别的
+                          问题的答案放进了用户的编译台。有了数据才出现，语义上也更准：
+                          你的词先落进去，AI 的结论后到。 */}
+                      {compiled && <span className="gl-tchip__node">{node.labels[1]}</span>}
                       {/* 等待模型返回：空着的那几格自己呼吸。
                           那几秒 AI 在补的就是这几环，信号长在它该在的地方，
                           而不是页脚上一根来回走的假进度条。 */}
@@ -2166,9 +2187,13 @@ export default function GlassLab() {
                         : "AI 正在推演因果链"
                       : beatLabel}
                   </span>
-                  <button type="button" className="gl-trans__skip" onClick={skipCompile}>
-                    {waiting ? "先看结果" : "跳过"} <kbd>Esc</kbd>
-                  </button>
+                  {/* 等待期不出现「跳过」类按钮：那一刻还没有结果可看，
+                      点它只会把人送到一张还没生成的图上（曾经直接落到示例）。 */}
+                  {!waiting && (
+                    <button type="button" className="gl-trans__skip" onClick={skipCompile}>
+                      跳过 <kbd>Esc</kbd>
+                    </button>
+                  )}
                 </div>
               </div>
             )}
