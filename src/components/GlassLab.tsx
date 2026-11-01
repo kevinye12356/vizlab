@@ -1543,20 +1543,24 @@ export default function GlassLab() {
               <span className="gl-brand__mark">VIZLAB</span>
               <span className="gl-brand__sub">提示词编译台 · PROMPT COMPILER</span>
             </div>
-            <div className="gl-pill glass">目标模型：Opus 5.5</div>
-            <div className="gl-motion" role="group" aria-label="动效强度">
-              <button className={motion === "full" ? "on" : ""} aria-pressed={motion === "full"} onClick={() => chooseMotion("full")}>
-                动效：完整
-              </button>
-              <button className={motion === "simple" ? "on" : ""} aria-pressed={motion === "simple"} onClick={() => chooseMotion("simple")}>
-                简化
-              </button>
+            {/* 右侧三项收进同一个容器：原先它们直接挂在 .gl-nav 下，
+                再加一项就挤成四段；收成一个弹性组后，窄屏才能整组换行。 */}
+            <div className="gl-nav__side">
+              <div className="gl-pill glass">目标模型：Opus 5.5</div>
+              <div className="gl-motion" role="group" aria-label="动效强度">
+                <button className={motion === "full" ? "on" : ""} aria-pressed={motion === "full"} onClick={() => chooseMotion("full")}>
+                  <span className="gl-motion__prefix">动效：</span>完整
+                </button>
+                <button className={motion === "simple" ? "on" : ""} aria-pressed={motion === "simple"} onClick={() => chooseMotion("simple")}>
+                  简化
+                </button>
+              </div>
+              {autoSimple && motion === "simple" && (
+                <button type="button" className="gl-motion-hint" onClick={() => chooseMotion("full")}>
+                  已按系统偏好简化 · 点此开启完整动效
+                </button>
+              )}
             </div>
-            {autoSimple && motion === "simple" && (
-              <button type="button" className="gl-motion-hint" onClick={() => chooseMotion("full")}>
-                已按系统偏好简化 · 点此开启完整动效
-              </button>
-            )}
           </header>
 
           {/* FLIP 目标：输入台缩至顶部 */}
@@ -2025,11 +2029,11 @@ export default function GlassLab() {
               <span className="gl-brand__mark">VIZLAB</span>
               <span className="gl-brand__sub">提示词编译台 · PROMPT COMPILER</span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div className="gl-nav__side">
               <div className="gl-pill glass">目标模型：Opus 5.5</div>
               <div className="gl-motion" role="group" aria-label="动效强度">
                 <button className={motion === "full" ? "on" : ""} aria-pressed={motion === "full"} onClick={() => chooseMotion("full")}>
-                  动效：完整
+                  <span className="gl-motion__prefix">动效：</span>完整
                 </button>
                 <button className={motion === "simple" ? "on" : ""} aria-pressed={motion === "simple"} onClick={() => chooseMotion("simple")}>
                   简化
@@ -2045,7 +2049,7 @@ export default function GlassLab() {
 
           <section className="gl-hero">
             <h1>
-              把一句好奇，<em>编译</em>成一支科普视频
+              把一句好奇，<em>编译</em>成一支<span className="gl-nb">科普视频</span>
             </h1>
             <p className="gl-hero__sub">抽象概念结构 × 可执行提示词 · 输入一句“条件 + 现象”式的疑问试试</p>
           </section>
