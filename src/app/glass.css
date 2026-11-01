@@ -385,25 +385,27 @@ button { font-family: inherit; cursor: pointer; }
   margin-top: 16px;
 }
 .gl-trans__beat { font-size: 12px; color: var(--ink-dim); letter-spacing: 0.06em; }
-.gl-trans__bar {
-  width: 96px; height: 2px; border-radius: 2px;
-  background: rgba(146, 180, 220, 0.2); overflow: hidden;
+/* 等待模型返回：信号长在「还没被填上的槽位」上，而不是一条来回走的进度条。
+   两个理由：
+   1) 那几秒 AI 干的事就是填中间几环 —— 占位呼吸正好指向正在发生的事；
+   2) 往返的条既谎报百分比（会倒退），又属于「无计数器 / 无 preloader」的禁列。
+   占位按真实文案的体量（约 4 字 × 12.5px）定尺寸，数据到位时原地换成概念，
+   布局不位移 —— 这就是 loading 该有的样子：最终布局 + 值换成等尺寸占位。 */
+.gl-tchip__wait {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  pointer-events: none;
 }
-.gl-trans__bar i {
-  display: block; height: 100%; width: 100%;
-  background: var(--cyan);
-  transform: scaleX(var(--p, 0)); transform-origin: left center;
-  transition: transform 420ms var(--ease);
+.gl-tchip__wait > i {
+  display: block; width: 54px; height: 10px; border-radius: 3px;
+  background: rgba(146, 180, 220, 0.34);
+  animation: twait-breathe 2.4s var(--ease) infinite;
+  animation-delay: calc(var(--wi, 0) * 400ms);
 }
-/* 等待模型返回：进度条本身在动，说明"还在跑"，而不是卡在某个百分比上 */
-.gl-trans__bar.is-waiting i {
-  transform: none; transform-origin: left center;
-  animation: tbar-wait 1.5s var(--ease) infinite;
-}
-@keyframes tbar-wait {
-  0% { transform: scaleX(0.08); }
-  50% { transform: scaleX(0.62); }
-  100% { transform: scaleX(0.08); }
+/* 慢、并且错开：读起来是「机器一格一格在推」，不是「一个点在闪」 */
+@keyframes twait-breathe {
+  0%, 100% { opacity: 0.26; }
+  50% { opacity: 0.62; }
 }
 
 /* ============================================================
@@ -659,15 +661,6 @@ button { font-family: inherit; cursor: pointer; }
   position: absolute; width: 1px; height: 1px;
   padding: 0; margin: -1px; overflow: hidden;
   clip-path: inset(50%); white-space: nowrap; border: 0;
-}
-.gl-stage__bar {
-  width: 120px; height: 2px; border-radius: 2px; overflow: hidden;
-  background: rgba(255, 255, 255, 0.08); position: relative;
-}
-.gl-stage__bar i {
-  position: absolute; inset: 0; background: var(--cyan);
-  transform-origin: left; transform: scaleX(var(--p, 0));
-  transition: transform 400ms var(--ease);
 }
 .gl-rec {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
@@ -1105,6 +1098,9 @@ svg .dim { opacity: 0.15; transition: opacity 300ms var(--ease); }
    动效简化模式（保留淡入与连线，去掉粒子/扫描/飞行/漂移）
    ============================================================ */
 [data-motion="simple"] .aurora__blob { animation: none; }
+/* 等待占位在简化模式下不呼吸，但仍保留占位本身 ——
+   去掉的是动，不是「这一格还空着」这个信息。 */
+[data-motion="simple"] .gl-tchip__wait > i { animation: none; opacity: 0.4; }
 [data-motion="simple"] .gl-dot { display: none; }
 [data-motion="simple"] .gl-edge { animation: none; stroke-dashoffset: 0; }
 [data-motion="simple"] .gl-node--missing { animation: none; }

@@ -1407,7 +1407,10 @@ export default function GlassLab() {
     waiting ? "推演 · AI 正在补全因果链" : "补链 · 填补因果",
     "落定",
   ];
-  const stageProgress = ["0", "0.15", "0.5", "0.85", "1"][stage] ?? "0";
+  /* 等待时说「还差几环」，不说百分比。
+     百分比是编的（我们并不知道模型要跑多久），环数是真的 ——
+     它就是那几个空槽的数量，和画面上看到的完全对得上。 */
+  const pendingRings = chain.filter((c) => !c.from).length;
   /* 拍二演完、模型还没回时，说的应该是「在推演」，
      而不是停在「拆解」让用户以为卡住了。 */
   const beatLabel = waiting && stage <= 2 ? stageNames[3] : stageNames[stage];
@@ -2128,10 +2131,19 @@ export default function GlassLab() {
                         chipRefs.current[i] = el;
                       }}
                       className={`gl-tchip gl-tchip--${c.kind}`}
+                      style={{ ["--wi" as string]: i } as CSSProperties}
                       aria-hidden="true"
                     >
                       {userWord && <span className="gl-tchip__user">{userWord}</span>}
                       <span className="gl-tchip__node">{node.labels[1]}</span>
+                      {/* 等待模型返回：空着的那几格自己呼吸。
+                          那几秒 AI 在补的就是这几环，信号长在它该在的地方，
+                          而不是页脚上一根来回走的假进度条。 */}
+                      {waiting && !userWord && (
+                        <span className="gl-tchip__wait">
+                          <i />
+                        </span>
+                      )}
                     </div>
                   );
                   return i < chain.length - 1
@@ -2146,9 +2158,13 @@ export default function GlassLab() {
                     : [chip];
                 })}
                 <div className="gl-trans__foot">
-                  <span className="gl-trans__beat">{beatLabel}</span>
-                  <span className={`gl-trans__bar${waiting && stage < 4 ? " is-waiting" : ""}`}>
-                    <i style={{ ["--p" as string]: stageProgress } as CSSProperties} />
+                  {/* 等待时只说一句真话：还差几环。没有进度条、没有百分比。 */}
+                  <span className="gl-trans__beat">
+                    {waiting
+                      ? pendingRings > 0
+                        ? `AI 正在补全中间 ${pendingRings} 环`
+                        : "AI 正在推演因果链"
+                      : beatLabel}
                   </span>
                   <button type="button" className="gl-trans__skip" onClick={skipCompile}>
                     {waiting ? "先看结果" : "跳过"} <kbd>Esc</kbd>
@@ -2159,20 +2175,15 @@ export default function GlassLab() {
             </div>
 
             {/* 阶段说明 */}
+            {/* 读屏通道：只说「现在在做什么」，一句话。
+                原先这里还挂着两样只对手册用户有害的东西：
+                ① `0{stage} / 03` —— 零填充编号，stage 走到 4 时会变成自相矛盾的
+                   「04 / 03」，而且随拍次反复播报；
+                ② `ANALYZE · COMPILE · DELIVER` —— 大写宽字距的氛围字，
+                   视觉上从不可见，读屏用户却会在进首页时先听到一句英文。
+                两者都不是信息，是装饰漏进了无障碍通道。 */}
             <div className="gl-stage" aria-live="polite">
-              {phase === "compiling" ? (
-                <>
-                  <span>{beatLabel}</span>
-                  <span className="gl-stage__bar">
-                    <i style={{ ["--p" as string]: stageProgress } as CSSProperties} />
-                  </span>
-                  <span style={{ color: "var(--ink-faint)" }}>0{stage} / 03</span>
-                </>
-              ) : (
-                <span style={{ color: "var(--ink-ghost)", letterSpacing: "0.2em", fontSize: 11 }}>
-                  ANALYZE · COMPILE · DELIVER
-                </span>
-              )}
+              {phase === "compiling" ? <span>{beatLabel}</span> : null}
             </div>
 
 
